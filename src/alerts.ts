@@ -52,6 +52,13 @@ export function mailOf(env: AlertEnv): Mail | undefined {
 	return { from: name ? { name, email } : email, to };
 }
 
+/** Sends one message to ALERT_TO. Throws when nowhere is set up or Email Service refuses it. */
+export async function sendMail(env: AlertEnv, subject: string, text: string): Promise<void> {
+	const mail = mailOf(env);
+	if (!mail || !env.EMAIL) throw new Error("ALERT_TO names nobody.");
+	await env.EMAIL.send({ from: mail.from, to: mail.to, subject, text });
+}
+
 export interface AlertMessage {
 	subject: string;
 	text: string;

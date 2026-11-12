@@ -16,6 +16,14 @@
 				"contains": "\"ok\":true"
 			}
 		],
-		"ALERT_FROM": "Gateweave Status <status@example.com>"
+		"ALERT_FROM": "Gateweave Status <status@example.com>",
+		"ERROR_WATCH": {
+			"account": "00000000000000000000000000000001",
+			"zone": "00000000000000000000000000000002",
+			"hosts": ["track.test", "site.test"],
+			"scripts": ["track-worker"],
+			"minErrors": 10,
+			"minShare": 0.05
+		}
 	}
 }

@@ -3,10 +3,12 @@
 //
 // Tests drive it at https://control.test: POST /__set with {"<url>": {status, body, hang, times}}
 // makes that URL answer so (`hang` answers 5 s late; `times` limits it to the next N requests),
-// /__reset forgets every answer and count, and GET /__hits says how often each URL was asked.
+// /__reset forgets every answer and count, GET /__hits says how often each URL was asked, and
+// GET /__last?url=<url> gives the last POST to it: its authorization header and body.
 
 const answers = new Map();
 const hits = new Map();
+const last = new Map();
 
 export default {
 	async fetch(request) {
@@ -21,13 +23,22 @@ export default {
 				case "/__reset":
 					answers.clear();
 					hits.clear();
+					last.clear();
 					return new Response("ok");
 				case "/__hits":
 					return Response.json(Object.fromEntries(hits));
+				case "/__last":
+					return Response.json(last.get(url.searchParams.get("url")) ?? null);
 			}
 			return new Response("no such control", { status: 404 });
 		}
 		hits.set(url.href, (hits.get(url.href) ?? 0) + 1);
+		if (request.method === "POST") {
+			last.set(url.href, {
+				authorization: request.headers.get("authorization"),
+				body: await request.json(),
+			});
+		}
 		const answer = answers.get(url.href);
 		if (answer?.times !== undefined) {
 			answer.times--;

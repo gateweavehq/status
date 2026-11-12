@@ -1,8 +1,9 @@
 // A stand-in for the services the Worker checks, which every fetch the tests' Worker makes reaches
 // (vitest.config.ts). Each URL answers 200 with {"ok":true} until a test says otherwise.
 //
-// Tests drive it at https://control.test: POST /__set with {"<url>": {status, body, hang, times}}
-// makes that URL answer so (`hang` answers 5 s late; `times` limits it to the next N requests),
+// Tests drive it at https://control.test: POST /__set with {"<url>": {status, body, hang, delay,
+// times}} makes that URL answer so (`hang` answers 5 s late, `delay` that many milliseconds late;
+// `times` limits it to the next N requests),
 // /__reset forgets every answer and count, GET /__hits says how often each URL was asked, and
 // GET /__last?url=<url> gives the last POST to it: its authorization header and body.
 
@@ -46,6 +47,7 @@ export default {
 		}
 		// Late rather than never: workerd cancels a request that can never be answered.
 		if (answer?.hang) await new Promise((done) => setTimeout(done, 5_000));
+		if (answer?.delay) await new Promise((done) => setTimeout(done, answer.delay));
 		return new Response(answer?.body ?? '{"ok":true}', {
 			status: answer?.status ?? 200,
 			headers: { "content-type": "application/json" },

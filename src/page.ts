@@ -1,3 +1,4 @@
+import { SLOW_MS } from "./check";
 import type { DayCount, Health, IncidentView, ServiceStatus, StatusData } from "./status";
 import { clock, duration, when } from "./time";
 
@@ -22,16 +23,25 @@ export function percent(share: number): string {
 
 const HEADLINE: Record<Health, string> = {
 	up: "All services are working",
+	slow: "Something is slow",
 	down: "Something is down",
 	unknown: "The checks have stopped",
 };
 
-const LABEL: Record<Health, string> = { up: "Working", down: "Down", unknown: "Not checked" };
+const LABEL: Record<Health, string> = {
+	up: "Working",
+	slow: "Slow",
+	down: "Down",
+	unknown: "Not checked",
+};
 
 function headline(data: StatusData): string {
-	const down = data.services.filter((s) => s.status === "down");
-	if (down.length === 1 && down[0]) return `${down[0].name} is down`;
-	if (down.length > 1) return `${down.map((s) => s.name).join(", ")} are down`;
+	for (const status of ["down", "slow"] as const) {
+		if (data.status !== status) continue;
+		const named = data.services.filter((s) => s.status === status);
+		if (named.length === 1 && named[0]) return `${named[0].name} is ${status}`;
+		if (named.length > 1) return `${named.map((s) => s.name).join(", ")} are ${status}`;
+	}
 	return HEADLINE[data.status];
 }
 
@@ -59,7 +69,7 @@ function serviceCard(service: ServiceStatus, now: number): string {
 	const since =
 		service.status === "down" && service.since !== null
 			? ` since ${clock(service.since)} UTC`
-			: service.status === "up" && service.ms !== null
+			: (service.status === "up" || service.status === "slow") && service.ms !== null
 				? ` · ${count(service.ms)} ms`
 				: "";
 	return `<article class="service">
@@ -73,8 +83,8 @@ function incidentItem(incident: IncidentView, now: number): string {
 	const started = `${when(incident.startedAt)}, ${clock(incident.startedAt)}`;
 	const what =
 		incident.endedAt === null
-			? `down since ${started} UTC (${duration(now - incident.startedAt)} so far)`
-			: `down for ${duration(incident.endedAt - incident.startedAt)} · ${started}–${clock(incident.endedAt)} UTC`;
+			? `${incident.kind} since ${started} UTC (${duration(now - incident.startedAt)} so far)`
+			: `${incident.kind} for ${duration(incident.endedAt - incident.startedAt)} · ${started}–${clock(incident.endedAt)} UTC`;
 	const error = incident.error ? `<p class="error">${esc(incident.error)}</p>` : "";
 	return `<li class="${incident.endedAt === null ? "open" : "closed"}"><p><strong>${esc(incident.name)}</strong> ${esc(what)}</p>${error}</li>`;
 }
@@ -106,7 +116,7 @@ export function renderPage(data: StatusData): string {
 <section class="banner ${data.status}" role="status"><span class="dot"></span><div><h1>${esc(headline(data))}</h1><p>${checked === undefined ? "Not checked yet" : `Checked at ${clock(checked)} UTC, ${when(checked)}`}</p></div></section>
 <section class="services">${data.services.map((s) => serviceCard(s, data.now)).join("\n")}</section>
 <section><h2 class="heading">Incidents</h2>${incidents}</section>
-<footer><p>Each service is checked every minute from Cloudflare's network. A failed check is tried again after two seconds, and two failed checks in a row make an incident. Times are in UTC.</p><p><a href="/api/status">JSON</a> · <a href="https://gateweave.com">gateweave.com</a></p></footer>
+<footer><p>Each service is checked every minute from Cloudflare's network. A failed check is tried again after two seconds, and two failed checks in a row make an incident. A service that takes more than ${SLOW_MS / 1000} seconds to answer five checks in a row is slow. Times are in UTC.</p><p><a href="/api/status">JSON</a> · <a href="https://gateweave.com">gateweave.com</a></p></footer>
 </main>
 </body>
 </html>
@@ -171,6 +181,7 @@ h1, h2 { margin: 0; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--none); }
 .up .dot { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in oklch, var(--ok) 20%, transparent); }
 .down .dot { background: var(--major); box-shadow: 0 0 0 4px color-mix(in oklch, var(--major) 20%, transparent); }
+.slow .dot { background: var(--minor); box-shadow: 0 0 0 4px color-mix(in oklch, var(--minor) 20%, transparent); }
 .unknown .dot { background: var(--minor); }
 .services { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 32px; }
 .service { padding: 16px 20px; }
@@ -179,6 +190,7 @@ h1, h2 { margin: 0; }
 .service h2 { font-size: 15px; font-weight: 600; }
 .state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted-foreground); white-space: nowrap; }
 .state.down { color: var(--major); }
+.state.slow { color: var(--minor); }
 .bars { display: grid; grid-template-columns: repeat(90, 1fr); gap: 2px; height: 30px; }
 .bar { border-radius: 2px; background: var(--none); }
 .bar.ok { background: var(--ok); }

@@ -12,6 +12,11 @@ export interface CheckResult {
 }
 
 export const TIMEOUT_MS = 10_000;
+/**
+ * An answer slower than this is slow. Gateweave's services answer their checks in well under a
+ * second; three seconds is what a person notices waiting for a page.
+ */
+export const SLOW_MS = 3_000;
 /** A failed check is tried once more after this, so one dropped request isn't an outage. */
 export const RETRY_AFTER_MS = 2_000;
 /** Bodies are read this far for `contains`; health answers are short. */

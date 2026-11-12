@@ -1,3 +1,4 @@
+import { SLOW_MS } from "./check";
 import type { Service } from "./config";
 import { ConfigError } from "./config";
 import { clock, duration, when } from "./time";
@@ -11,10 +12,11 @@ export interface AlertEnv {
 	PAGE_URL?: string;
 }
 
-/** An incident as the database keeps it. */
+/** An incident as the database keeps it: an outage, or a spell of slow answers. */
 export interface Incident {
 	id: number;
 	service: string;
+	kind: "down" | "slow";
 	started_at: number;
 	ended_at: number | null;
 	error: string | null;
@@ -73,6 +75,7 @@ export function messageFor(
 	const { name } = service;
 	const started = `${clock(incident.started_at)} UTC on ${when(incident.started_at)}`;
 	const footer = ["", `Status: ${pageUrl}`, "", "--", "Gateweave Status checks every minute."];
+	if (incident.kind === "slow") return slowMessage(incident, service, started, footer);
 	if (incident.ended_at === null) {
 		return {
 			subject: `${name} is down`,
@@ -99,6 +102,43 @@ export function messageFor(
 		subject: `${name} is back up`,
 		text: [
 			`${name} works again since ${clock(incident.ended_at)} UTC, after ${lasted} down (from ${started}).`,
+			...footer,
+		].join("\n"),
+	};
+}
+
+function slowMessage(
+	incident: Incident,
+	{ name, url }: Pick<Service, "name" | "url">,
+	started: string,
+	footer: string[],
+): AlertMessage {
+	const line = `${SLOW_MS / 1000} s`;
+	if (incident.ended_at === null) {
+		return {
+			subject: `${name} is slow`,
+			text: [
+				`${name} has taken more than ${line} to answer every check since ${started}. It still answers.`,
+				`When it turned slow: ${incident.error ?? "it was slow"}`,
+				`Checked: ${url}`,
+				...footer,
+			].join("\n"),
+		};
+	}
+	const lasted = duration(incident.ended_at - incident.started_at);
+	if (incident.alerted_at === null) {
+		return {
+			subject: `${name} was slow for ${lasted}`,
+			text: [
+				`${name} took more than ${line} to answer every check from ${started} until ${clock(incident.ended_at)} UTC.`,
+				...footer,
+			].join("\n"),
+		};
+	}
+	return {
+		subject: `${name} answers quickly again`,
+		text: [
+			`${name} answers in time again since ${clock(incident.ended_at)} UTC, after ${lasted} slow (from ${started}).`,
 			...footer,
 		].join("\n"),
 	};

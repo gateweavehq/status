@@ -10,7 +10,8 @@ export const INCIDENT_DAYS = 30;
 /** A service not checked for this long is shown as unknown: the checks themselves stopped. */
 export const STALE_MS = 5 * MINUTE;
 
-export type Health = "up" | "down" | "unknown";
+/** Slow: it answers, but has taken longer than SLOW_MS for a while (see monitor.ts). */
+export type Health = "up" | "slow" | "down" | "unknown";
 
 export interface DayCount {
 	day: string;
@@ -22,7 +23,7 @@ export interface ServiceStatus {
 	id: string;
 	name: string;
 	status: Health;
-	/** Since when it has been up or down. */
+	/** Since when it has been up, slow or down. */
 	since: number | null;
 	checkedAt: number | null;
 	ms: number | null;
@@ -35,6 +36,7 @@ export interface ServiceStatus {
 export interface IncidentView {
 	service: string;
 	name: string;
+	kind: "down" | "slow";
 	startedAt: number;
 	endedAt: number | null;
 	error: string | null;
@@ -71,8 +73,14 @@ export async function statusData(
 		days.set(row.day, { day: row.day, checks: row.checks, failures: row.failures });
 		countsOf.set(row.service, days);
 	}
+	const openSlow = new Map(
+		((incidents?.results ?? []) as Incident[])
+			.filter((incident) => incident.kind === "slow" && incident.ended_at === null)
+			.map((incident) => [incident.service, incident.started_at]),
+	);
 	const viewOf = (service: Service): ServiceStatus => {
 		const state = stateOf.get(service.id);
+		const slowSince = openSlow.get(service.id);
 		const stale = !state || now - state.checked_at > STALE_MS;
 		const days = Array.from({ length: DAYS }, (_, i) => {
 			const day = dayOf(now - (DAYS - 1 - i) * DAY);
@@ -84,11 +92,16 @@ export async function statusData(
 			checks += day?.checks ?? 0;
 			failures += day?.failures ?? 0;
 		}
+		const status: Health = stale
+			? "unknown"
+			: state.status === "up" && slowSince !== undefined
+				? "slow"
+				: state.status;
 		return {
 			id: service.id,
 			name: service.name,
-			status: stale ? "unknown" : state.status,
-			since: state?.since ?? null,
+			status,
+			since: status === "slow" ? (slowSince ?? null) : (state?.since ?? null),
 			checkedAt: state?.checked_at ?? null,
 			ms: state?.last_ms ?? null,
 			uptime: checks === 0 ? null : (checks - failures) / checks,
@@ -103,13 +116,16 @@ export async function statusData(
 			? "down"
 			: views.some((s) => s.status === "unknown")
 				? "unknown"
-				: "up",
+				: views.some((s) => s.status === "slow")
+					? "slow"
+					: "up",
 		services: views,
 		incidents: ((incidents?.results ?? []) as Incident[])
 			.filter((incident) => names.has(incident.service))
 			.map((incident) => ({
 				service: incident.service,
 				name: names.get(incident.service) ?? incident.service,
+				kind: incident.kind,
 				startedAt: incident.started_at,
 				endedAt: incident.ended_at,
 				error: incident.error,

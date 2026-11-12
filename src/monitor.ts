@@ -1,10 +1,14 @@
 import { type AlertEnv, sendAlerts } from "./alerts";
-import { type CheckResult, check } from "./check";
+import { type CheckResult, check, SLOW_MS } from "./check";
 import { servicesOf } from "./config";
 import { DAY, dayOf, HOUR, MINUTE } from "./time";
 
 /** Failed checks in a row that take a service down: two, so about two minutes. */
 export const DOWN_AFTER = 2;
+/** Slow answers in a row that make a service slow: five, so five minutes, past any one slow start. */
+export const SLOW_AFTER = 5;
+/** Answers in time in a row that end a slow spell. */
+export const QUICK_AFTER = 3;
 /** Each check is kept this long; the days' counts are kept for good. */
 export const KEEP_CHECKS_MS = 7 * DAY;
 
@@ -26,9 +30,51 @@ export interface ServiceState {
 
 export interface Change {
 	service: string;
-	to: "up" | "down";
-	/** When the change happened: the first failed check, or the check that worked again. */
+	/** Down and up, or slow and quick again while it stays up. */
+	to: "up" | "down" | "slow" | "quick";
+	/**
+	 * When the change happened: the first failed or slow check of the run, or the first check that
+	 * worked again or answered in time.
+	 */
 	at: number;
+}
+
+/** A check as the slow spells are worked out from: newest first. */
+export interface RecentCheck {
+	at: number;
+	ok: boolean;
+	ms: number;
+}
+
+/**
+ * Whether a service turns slow, or quick again, after this check. `recent` holds its last checks,
+ * newest first, this one included. A spell that is open ends when the service goes down instead,
+ * which `tick` sees to, as the outage says more.
+ */
+export function nextSlowness(
+	recent: RecentCheck[],
+	open: boolean,
+	slowMs = SLOW_MS,
+): { to: "slow" | "quick"; at: number } | undefined {
+	if (open) {
+		const last = recent.slice(0, QUICK_AFTER);
+		const first = last.at(-1);
+		if (first && last.length === QUICK_AFTER && last.every((c) => c.ok && c.ms < slowMs)) {
+			return { to: "quick", at: first.at };
+		}
+		return undefined;
+	}
+	const last = recent.slice(0, SLOW_AFTER);
+	const first = last.at(-1);
+	if (first && last.length === SLOW_AFTER && last.every((c) => c.ok && c.ms >= slowMs)) {
+		return { to: "slow", at: first.at };
+	}
+	return undefined;
+}
+
+/** `Answered in 4.8 s.`: what a slow spell's alert and the page say. */
+export function slowAnswer(ms: number): string {
+	return `Answered in ${(ms / 1000).toFixed(1)} s.`;
 }
 
 /** What a check makes of a service's state, and whether it went down or came back. */
@@ -85,7 +131,11 @@ export interface TickReport {
 export async function tick(
 	env: MonitorEnv,
 	scheduledTime: number,
-	{ send = fetch, retryAfter }: { send?: typeof fetch; retryAfter?: number } = {},
+	{
+		send = fetch,
+		retryAfter,
+		slowMs = SLOW_MS,
+	}: { send?: typeof fetch; retryAfter?: number; slowMs?: number } = {},
 ): Promise<TickReport> {
 	const services = servicesOf(env.SERVICES);
 	const at = Math.floor(scheduledTime / MINUTE) * MINUTE;
@@ -97,13 +147,30 @@ export async function tick(
 	const results = await Promise.all(
 		services.map((service) => check(service, send, retryAfter === undefined ? {} : { retryAfter })),
 	);
-	const states = new Map(
-		(await env.DB.prepare("SELECT * FROM service_state").all<ServiceState>()).results.map((row) => [
-			row.service,
-			row,
-		]),
-	);
 	const db = env.DB;
+	const [stateRows, recentRows, slowRows] = await db.batch<unknown>([
+		db.prepare("SELECT * FROM service_state"),
+		// The checks before this one that a slow spell is worked out from.
+		db
+			.prepare(
+				"SELECT service, at, ok, ms FROM check_result WHERE at >= ?1 AND at < ?2 ORDER BY at DESC",
+			)
+			.bind(at - SLOW_AFTER * MINUTE, at),
+		db.prepare("SELECT service FROM incident WHERE kind = 'slow' AND ended_at IS NULL"),
+	]);
+	const states = new Map(
+		((stateRows?.results ?? []) as ServiceState[]).map((row) => [row.service, row]),
+	);
+	const recentOf = new Map<string, RecentCheck[]>();
+	type Row = { service: string; at: number; ok: number; ms: number };
+	for (const row of (recentRows?.results ?? []) as Row[]) {
+		const list = recentOf.get(row.service) ?? [];
+		list.push({ at: row.at, ok: row.ok === 1, ms: row.ms });
+		recentOf.set(row.service, list);
+	}
+	const slowNow = new Set(
+		((slowRows?.results ?? []) as { service: string }[]).map((r) => r.service),
+	);
 	const day = dayOf(at);
 	const statements: D1PreparedStatement[] = [];
 	const changes: Change[] = [];
@@ -149,11 +216,49 @@ export async function tick(
 		} else if (change?.to === "up") {
 			statements.push(
 				db
-					.prepare("UPDATE incident SET ended_at = ?2 WHERE service = ?1 AND ended_at IS NULL")
+					.prepare(
+						"UPDATE incident SET ended_at = ?2 WHERE service = ?1 AND kind = 'down' AND ended_at IS NULL",
+					)
 					.bind(result.service, at),
 			);
 		}
 		if (change) changes.push(change);
+
+		const slow = slowNow.has(result.service);
+		if (slow && state.status === "down") {
+			// The outage takes over: the slow spell ends where it began, and its alerts are done, as
+			// the outage's say what matters now.
+			const end = change?.to === "down" ? change.at : at;
+			statements.push(
+				db
+					.prepare(
+						`UPDATE incident SET ended_at = ?2, alerted_at = COALESCE(alerted_at, ?3), resolved_alerted_at = ?3
+							WHERE service = ?1 AND kind = 'slow' AND ended_at IS NULL`,
+					)
+					.bind(result.service, end, at),
+			);
+			continue;
+		}
+		const recent = [{ at, ok: result.ok, ms: result.ms }, ...(recentOf.get(result.service) ?? [])];
+		const turn = nextSlowness(recent, slow, slowMs);
+		if (turn?.to === "slow") {
+			statements.push(
+				db
+					.prepare(
+						"INSERT INTO incident (service, started_at, error, kind) VALUES (?1, ?2, ?3, 'slow')",
+					)
+					.bind(result.service, turn.at, slowAnswer(result.ms)),
+			);
+		} else if (turn?.to === "quick") {
+			statements.push(
+				db
+					.prepare(
+						"UPDATE incident SET ended_at = ?2 WHERE service = ?1 AND kind = 'slow' AND ended_at IS NULL",
+					)
+					.bind(result.service, turn.at),
+			);
+		}
+		if (turn) changes.push({ service: result.service, ...turn });
 	}
 	if (at % HOUR === 0) {
 		statements.push(db.prepare("DELETE FROM check_result WHERE at < ?1").bind(at - KEEP_CHECKS_MS));

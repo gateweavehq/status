@@ -2,13 +2,18 @@
 
 The status page of Gateweave Cloud, at [status.gateweave.com](https://status.gateweave.com). One
 Cloudflare Worker checks each service every minute, keeps the results in D1, opens and closes
-incidents, emails an alert when a service goes down and when it comes back, and serves the page.
+incidents, emails an alert when a service goes down or turns slow and when it recovers, and serves the
+page.
 
 - **A check** fetches a service's URL and expects a status (200 by default) within 10 seconds, and,
   where set, a piece of text in the body. A redirect counts as an answer, not something to follow.
   A failed check is tried once more after two seconds, so one dropped request is not an outage.
 - **An incident** starts with the first failed check of two in a row and ends with the first check
   that passes.
+- **A slow spell** is an incident of its own kind: a service that still answers, but took more
+  than 3 seconds for five checks in a row. Three answers in time end it, and so does an outage,
+  which then does the telling. On 2026-11-12 Agents took 3 to 6 seconds a page for ten minutes
+  while every check passed; this is for that.
 - **Alerts** go by email through Email Service's binding to `ALERT_TO`. One that couldn't go is
   tried again each minute for three days, and an outage that ended before its alert went is told
   once.

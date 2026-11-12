@@ -36,7 +36,7 @@ async function control(path: string, body?: unknown) {
 
 async function answer(
 	url: string,
-	how: { status?: number; body?: string; hang?: boolean; times?: number },
+	how: { status?: number; body?: string; hang?: boolean; delay?: number; times?: number },
 ) {
 	await control("/__set", { [url]: how });
 }
@@ -66,8 +66,18 @@ function monitorEnv(box?: ReturnType<typeof mailbox>): MonitorEnv {
 	};
 }
 
+/** The line for slow in these tests, well under the stand-in's delay and well over its answers. */
+const SLOW = 150;
+
 const run = (at: number, box?: ReturnType<typeof mailbox>) =>
-	tick(monitorEnv(box), at, { retryAfter: 0 });
+	tick(monitorEnv(box), at, { retryAfter: 0, slowMs: SLOW });
+
+/** Runs the minutes from `from`, one check each. */
+async function runs(from: number, count: number, box?: ReturnType<typeof mailbox>) {
+	const reports = [];
+	for (let i = 0; i < count; i++) reports.push(await run(from + i * MINUTE, box));
+	return reports;
+}
 
 async function rows(sql: string) {
 	return (await env.DB.prepare(sql).all()).results;
@@ -271,6 +281,76 @@ describe("the monitor", () => {
 		expect(await rows("SELECT service, alerted_at FROM incident")).toEqual([
 			{ service: "site", alerted_at: null },
 		]);
+	});
+
+	it("calls a service slow after five slow answers in a row, alerts once, and when it is quick again", async () => {
+		const box = mailbox();
+		await answer(TRACK, { delay: SLOW + 150 });
+
+		// Four slow answers are not a spell yet.
+		const first = await runs(T0, 4, box);
+		expect(first.flatMap((r) => r.changes)).toEqual([]);
+		expect(await rows("SELECT * FROM incident")).toEqual([]);
+
+		const slow = await run(T0 + 4 * MINUTE, box);
+		expect(slow.changes).toEqual([{ service: "track", to: "slow", at: T0 }]);
+		expect(await rows("SELECT service, kind, started_at, ended_at FROM incident")).toEqual([
+			{ service: "track", kind: "slow", started_at: T0, ended_at: null },
+		]);
+		const [spell] = await rows("SELECT error FROM incident");
+		expect(spell?.error).toMatch(/^Answered in \d+\.\d s\.$/);
+		expect(box.sent.map((m) => m.subject)).toEqual(["Track is slow"]);
+		expect(box.sent[0]?.text).toContain(
+			"Track has taken more than 3 s to answer every check since 14:00 UTC on 12 Nov 2026.",
+		);
+		// It still works: no check failed, and the page says slow, not down.
+		expect(await rows("SELECT failures FROM daily WHERE service = 'track'")).toEqual([
+			{ failures: 0 },
+		]);
+		expect((await statusData(env, T0 + 4 * MINUTE + 1000)).status).toBe("slow");
+
+		// Two answers in time aren't enough to end it; the third is.
+		await control("/__reset");
+		expect((await runs(T0 + 5 * MINUTE, 2, box)).flatMap((r) => r.changes)).toEqual([]);
+		const quick = await run(T0 + 7 * MINUTE, box);
+		expect(quick.changes).toEqual([{ service: "track", to: "quick", at: T0 + 5 * MINUTE }]);
+		expect(await rows("SELECT ended_at FROM incident")).toEqual([{ ended_at: T0 + 5 * MINUTE }]);
+		expect(box.sent.map((m) => m.subject)).toEqual([
+			"Track is slow",
+			"Track answers quickly again",
+		]);
+		expect(box.sent[1]?.text).toContain(
+			"Track answers in time again since 14:05 UTC, after 5 min slow (from 14:00 UTC on 12 Nov 2026).",
+		);
+		expect((await statusData(env, T0 + 7 * MINUTE + 1000)).status).toBe("up");
+	});
+
+	it("ends a slow spell when the service goes down, and leaves the telling to the outage", async () => {
+		const box = mailbox();
+		await answer(TRACK, { delay: SLOW + 150 });
+		await runs(T0, 5, box);
+		await answer(TRACK, { status: 503 });
+		const reports = await runs(T0 + 5 * MINUTE, 2, box);
+		expect(reports.flatMap((r) => r.changes)).toEqual([
+			{ service: "track", to: "down", at: T0 + 5 * MINUTE },
+		]);
+		expect(
+			await rows("SELECT kind, started_at, ended_at FROM incident ORDER BY started_at"),
+		).toEqual([
+			{ kind: "slow", started_at: T0, ended_at: T0 + 5 * MINUTE },
+			{ kind: "down", started_at: T0 + 5 * MINUTE, ended_at: null },
+		]);
+		expect(box.sent.map((m) => m.subject)).toEqual(["Track is slow", "Track is down"]);
+
+		// Back up and quick: only the outage's end is told.
+		await control("/__reset");
+		await runs(T0 + 7 * MINUTE, 3, box);
+		expect(box.sent.map((m) => m.subject)).toEqual([
+			"Track is slow",
+			"Track is down",
+			"Track is back up",
+		]);
+		expect(await rows("SELECT * FROM incident WHERE ended_at IS NULL")).toEqual([]);
 	});
 
 	it("checks a minute once, however often the cron fires for it", async () => {
@@ -559,11 +639,24 @@ describe("the page", () => {
 			{
 				service: "track",
 				name: "Track",
+				kind: "down",
 				startedAt: expect.any(Number),
 				endedAt: null,
 				error: "Answered 503, not 200.",
 			},
 		]);
+	});
+
+	it("names what is slow, with how long it took, and lists the spell", async () => {
+		const now = Date.now();
+		await answer(TRACK, { delay: SLOW + 150 });
+		await runs(now - 5 * MINUTE, 5);
+		const html = await (await page()).text();
+		expect(html).toContain("<h1>Track is slow</h1>");
+		expect(html).toMatch(
+			/<span class="state slow"><span class="dot"><\/span>Slow · \d+ ms<\/span>/,
+		);
+		expect(html).toMatch(/<strong>Track<\/strong> slow since /);
 	});
 
 	it("says the checks stopped when none ran for five minutes", async () => {
@@ -612,6 +705,7 @@ describe("words", () => {
 		const base = {
 			id: 1,
 			service: "track",
+			kind: "down" as const,
 			started_at: T0,
 			error: "Answered 503, not 200.",
 			resolved_alerted_at: null,
@@ -630,5 +724,24 @@ describe("words", () => {
 				"https://s.test",
 			).subject,
 		).toBe("Track was down for 7 min");
+		const slow = { ...base, kind: "slow" as const, error: "Answered in 4.8 s." };
+		const open = messageFor(
+			{ ...slow, ended_at: null, alerted_at: null },
+			service,
+			"https://s.test",
+		);
+		expect(open.subject).toBe("Track is slow");
+		expect(open.text).toContain("When it turned slow: Answered in 4.8 s.");
+		expect(
+			messageFor({ ...slow, ended_at: T0 + 7 * MINUTE, alerted_at: T0 }, service, "https://s.test")
+				.subject,
+		).toBe("Track answers quickly again");
+		expect(
+			messageFor(
+				{ ...slow, ended_at: T0 + 7 * MINUTE, alerted_at: null },
+				service,
+				"https://s.test",
+			).subject,
+		).toBe("Track was slow for 7 min");
 	});
 });

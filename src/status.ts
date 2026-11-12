@@ -1,0 +1,118 @@
+import type { Incident } from "./alerts";
+import { type Service, servicesOf } from "./config";
+import type { ServiceState } from "./monitor";
+import { DAY, dayOf, MINUTE } from "./time";
+
+/** Days the page draws. */
+export const DAYS = 90;
+/** Incidents the page lists go back this far, and open ones however far. */
+export const INCIDENT_DAYS = 30;
+/** A service not checked for this long is shown as unknown: the checks themselves stopped. */
+export const STALE_MS = 5 * MINUTE;
+
+export type Health = "up" | "down" | "unknown";
+
+export interface DayCount {
+	day: string;
+	checks: number;
+	failures: number;
+}
+
+export interface ServiceStatus {
+	id: string;
+	name: string;
+	status: Health;
+	/** Since when it has been up or down. */
+	since: number | null;
+	checkedAt: number | null;
+	ms: number | null;
+	/** The share of checks that passed over the days drawn, or null with none. */
+	uptime: number | null;
+	/** One entry per day drawn, oldest first; a day without checks has none. */
+	days: (DayCount | null)[];
+}
+
+export interface IncidentView {
+	service: string;
+	name: string;
+	startedAt: number;
+	endedAt: number | null;
+	error: string | null;
+}
+
+export interface StatusData {
+	now: number;
+	status: Health;
+	services: ServiceStatus[];
+	incidents: IncidentView[];
+}
+
+/** Where every service stands now, its last 90 days, and the recent incidents. */
+export async function statusData(
+	env: { DB: D1Database; SERVICES: unknown },
+	now: number,
+): Promise<StatusData> {
+	const services = servicesOf(env.SERVICES);
+	const first = dayOf(now - (DAYS - 1) * DAY);
+	const [states, counts, incidents] = await env.DB.batch<unknown>([
+		env.DB.prepare("SELECT * FROM service_state"),
+		env.DB.prepare("SELECT service, day, checks, failures FROM daily WHERE day >= ?1").bind(first),
+		env.DB.prepare(
+			`SELECT * FROM incident WHERE started_at >= ?1 OR ended_at IS NULL
+				ORDER BY started_at DESC, id DESC LIMIT 20`,
+		).bind(now - INCIDENT_DAYS * DAY),
+	]);
+	const stateOf = new Map(
+		((states?.results ?? []) as ServiceState[]).map((row) => [row.service, row]),
+	);
+	const countsOf = new Map<string, Map<string, DayCount>>();
+	for (const row of (counts?.results ?? []) as (DayCount & { service: string })[]) {
+		const days = countsOf.get(row.service) ?? new Map<string, DayCount>();
+		days.set(row.day, { day: row.day, checks: row.checks, failures: row.failures });
+		countsOf.set(row.service, days);
+	}
+	const viewOf = (service: Service): ServiceStatus => {
+		const state = stateOf.get(service.id);
+		const stale = !state || now - state.checked_at > STALE_MS;
+		const days = Array.from({ length: DAYS }, (_, i) => {
+			const day = dayOf(now - (DAYS - 1 - i) * DAY);
+			return countsOf.get(service.id)?.get(day) ?? null;
+		});
+		let checks = 0;
+		let failures = 0;
+		for (const day of days) {
+			checks += day?.checks ?? 0;
+			failures += day?.failures ?? 0;
+		}
+		return {
+			id: service.id,
+			name: service.name,
+			status: stale ? "unknown" : state.status,
+			since: state?.since ?? null,
+			checkedAt: state?.checked_at ?? null,
+			ms: state?.last_ms ?? null,
+			uptime: checks === 0 ? null : (checks - failures) / checks,
+			days,
+		};
+	};
+	const views = services.map(viewOf);
+	const names = new Map(services.map((s) => [s.id, s.name]));
+	return {
+		now,
+		status: views.some((s) => s.status === "down")
+			? "down"
+			: views.some((s) => s.status === "unknown")
+				? "unknown"
+				: "up",
+		services: views,
+		incidents: ((incidents?.results ?? []) as Incident[])
+			.filter((incident) => names.has(incident.service))
+			.map((incident) => ({
+				service: incident.service,
+				name: names.get(incident.service) ?? incident.service,
+				startedAt: incident.started_at,
+				endedAt: incident.ended_at,
+				error: incident.error,
+			})),
+	};
+}

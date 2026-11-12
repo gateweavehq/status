@@ -1,0 +1,56 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "gateweave-status",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-11-01",
+	"account_id": "1be8d97ee2222bbe1713d65f6136345c",
+	"workers_dev": false,
+	"routes": [{ "pattern": "status.gateweave.com", "custom_domain": true }],
+	"observability": { "enabled": true },
+	// Every minute: check each service, keep the result, open or close incidents, send alerts.
+	"triggers": { "crons": ["* * * * *"] },
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "gateweave-status",
+			"database_id": "7eeb52c7-07c8-453f-84d7-f1f2b214c1ec",
+			"migrations_dir": "migrations"
+		}
+	],
+	"send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["status@gateweave.com"] }],
+	"vars": {
+		// What is checked, in the order the page shows it. A service is up when its URL answers
+		// `expect` (200 by default) within 10 seconds, with `contains` in the body when that is set.
+		// A Worker on a Custom Domain of the same zone can be fetched; one on a route can't.
+		"SERVICES": [
+			{ "id": "site", "name": "Website", "url": "https://gateweave.com/" },
+			{
+				"id": "id",
+				"name": "ID",
+				"url": "https://id.gateweave.com/api/auth/jwks",
+				"contains": "\"keys\""
+			},
+			{
+				"id": "track",
+				"name": "Track",
+				"url": "https://track.gateweave.com/api/auth/ok",
+				"contains": "\"ok\":true"
+			},
+			{
+				"id": "agents",
+				"name": "Agents",
+				"url": "https://agents.gateweave.com/api/auth/ok",
+				"contains": "\"ok\":true"
+			},
+			{
+				"id": "track-demo",
+				"name": "Track demo",
+				"url": "https://track-demo.gateweave.com/api/auth/ok",
+				"contains": "\"ok\":true"
+			}
+		],
+		// Alerts go from this address to the secret ALERT_TO (one address or a comma-separated
+		// list). Without ALERT_TO, incidents are only shown on the page.
+		"ALERT_FROM": "Gateweave Status <status@gateweave.com>"
+	}
+}

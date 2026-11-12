@@ -1,0 +1,21 @@
+// The Worker as the tests run it: a local database, and services at hosts the stand-in answers
+// for (test/target-worker.js), which every fetch reaches.
+{
+	"$schema": "../node_modules/wrangler/config-schema.json",
+	"name": "gateweave-status-test",
+	"main": "../src/index.ts",
+	"compatibility_date": "2026-11-01",
+	"d1_databases": [{ "binding": "DB", "database_name": "status", "database_id": "status" }],
+	"vars": {
+		"SERVICES": [
+			{ "id": "site", "name": "Website", "url": "https://site.test/" },
+			{
+				"id": "track",
+				"name": "Track",
+				"url": "https://track.test/api/auth/ok",
+				"contains": "\"ok\":true"
+			}
+		],
+		"ALERT_FROM": "Gateweave Status <status@example.com>"
+	}
+}

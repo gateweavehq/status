@@ -1,0 +1,28 @@
+{
+	"name": "gateweave-status",
+	"version": "0.0.0",
+	"private": true,
+	"license": "AGPL-3.0-only",
+	"type": "module",
+	"packageManager": "pnpm@12.4.2",
+	"engines": {
+		"node": ">=22.13"
+	},
+	"scripts": {
+		"typecheck": "wrangler types && tsc && tsc -p test",
+		"test": "vitest run",
+		"check": "biome check",
+		"format": "biome check --write",
+		"verify": "pnpm check && pnpm typecheck && pnpm test",
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.6.5",
+		"@cloudflare/vitest-plugin": "1.6.0",
+		"@types/node": "26.6.6",
+		"typescript": "7.0.2",
+		"vitest": "5.1.0",
+		"wrangler": "4.158.0"
+	}
+}

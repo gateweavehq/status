@@ -97,11 +97,18 @@ describe("services", () => {
 		]);
 	});
 
+	it("may come as JSON text, as the dashboard sets them", () => {
+		expect(servicesOf('[{"id":"a","name":"A","url":"https://a.test/"}]')).toEqual([
+			{ id: "a", name: "A", url: "https://a.test/", expect: 200 },
+		]);
+		expect(() => servicesOf("[{")).toThrow("SERVICES is a list of services to check, as JSON.");
+	});
+
 	it("refuse a setting they can't check as written", () => {
 		const good = { id: "a", name: "A", url: "https://a.test/" };
 		const wrong: [unknown, string][] = [
 			[[], "SERVICES is a list"],
-			["site", "SERVICES is a list"],
+			["{}", "SERVICES is a list"],
 			[[{ ...good, id: "Big" }], "id is lower-case"],
 			[[good, good], 'id "a" is there twice'],
 			[[{ ...good, name: "" }], "name is a name"],

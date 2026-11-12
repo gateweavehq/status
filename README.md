@@ -14,8 +14,8 @@ incidents, emails an alert when a service goes down and when it comes back, and 
   once.
 - **The error watch** catches what a health check can't: a page or API that broke while the
   service still answers. Every 15 minutes it asks Cloudflare's GraphQL analytics how often each
-  watched host answered 5xx and each watched Worker failed (an exception, a limit), over the 15
-  minutes that ended two minutes before. It emails when a service has at least `minErrors` errors
+  watched host answered 5xx and each watched Worker and its Durable Objects failed (an exception,
+  a limit; not a client that went away), over the 15 minutes that ended two minutes before. It emails when a service has at least `minErrors` errors
   and `minShare` of its requests failed, then stays quiet about that service for six hours. It
   needs `ERROR_WATCH` and the secret `ANALYTICS_TOKEN`: a token with Account Analytics Read on the
   account and Analytics Read on the zone. If the analytics can't be read, that is emailed too.

@@ -50,9 +50,10 @@
 			}
 		],
 		// The error watch: every 15 minutes, how often these hosts answered 5xx and these Workers
-		// failed, from Cloudflare's analytics, with the secret ANALYTICS_TOKEN (Account Analytics
-		// Read on the account, Analytics Read on the zone). It alerts at `minErrors` errors and
-		// `minShare` of the requests in a window, and not again for a service within six hours.
+		// and their Durable Objects failed, from Cloudflare's analytics, with the secret
+		// ANALYTICS_TOKEN (Account Analytics Read on the account, Analytics Read on the zone). It
+		// alerts at `minErrors` errors and `minShare` of the requests in a window, and not again for
+		// a service within six hours.
 		"ERROR_WATCH": {
 			"account": "1be8d97ee2222bbe1713d65f6136345c",
 			"zone": "705425654e1f23dbd43ddce5a49d1178",

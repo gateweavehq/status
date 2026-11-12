@@ -298,26 +298,34 @@ describe("the error watch", () => {
 	/** A quarter hour, when the watch runs. */
 	const Q = Date.UTC(2026, 10, 12, 14, 15);
 
-	/** What the analytics answer: requests and 5xx per host, invocations and errors per Worker. */
+	/**
+	 * What the analytics answer: requests and 5xx per host, and invocations and errors per Worker
+	 * and per Worker's Durable Objects.
+	 */
 	async function analytics({
 		hosts = {},
 		failed = {},
 		workers = {},
+		objects = {},
 	}: {
 		hosts?: Record<string, number>;
 		failed?: Record<string, Record<number, number>>;
 		workers?: Record<string, Record<string, [number, number]>>;
+		objects?: Record<string, Record<string, [number, number]>>;
 	}) {
+		const rows = (byScript: Record<string, Record<string, [number, number]>>) =>
+			Object.entries(byScript).flatMap(([scriptName, statuses]) =>
+				Object.entries(statuses).map(([status, [requests, errors]]) => ({
+					dimensions: { scriptName, status },
+					sum: { requests, errors },
+				})),
+			);
 		const data = {
 			viewer: {
 				accounts: [
 					{
-						workersInvocationsAdaptive: Object.entries(workers).flatMap(([scriptName, statuses]) =>
-							Object.entries(statuses).map(([status, [requests, errors]]) => ({
-								dimensions: { scriptName, status },
-								sum: { requests, errors },
-							})),
-						),
+						workersInvocationsAdaptive: rows(workers),
+						durableObjectsInvocationsAdaptiveGroups: rows(objects),
 					},
 				],
 				zones: [
@@ -458,6 +466,29 @@ describe("the error watch", () => {
 		expect(sent[0]?.text).toContain(
 			"The Worker track-worker failed 20 of 200 invocations (10%) between 13:58 and 14:13 UTC: scriptThrewException ×15, exceededResources ×5.",
 		);
+	});
+
+	it("counts a Durable Object's failures, but not clients that went away", async () => {
+		const { sent, watch } = watcher();
+		await analytics({
+			objects: {
+				"track-worker": {
+					success: [100, 0],
+					clientDisconnected: [400, 400],
+					exceededCpu: [30, 30],
+				},
+			},
+		});
+		const report = await watch(Q);
+		expect(report.findings.map((f) => [f.key, f.errors, f.total])).toEqual([
+			["objects:track-worker", 30, 530],
+		]);
+		expect(sent[0]).toEqual({
+			subject: "Errors on track-worker",
+			text: expect.stringContaining(
+				"The Durable Objects of track-worker failed 30 of 530 invocations (6%)",
+			),
+		});
 	});
 
 	it("says when it can't read the analytics, once in six hours", async () => {

@@ -3,8 +3,9 @@ import { clock, HOUR, MINUTE } from "./time";
 
 /**
  * The error watch: every 15 minutes it asks Cloudflare's analytics how often each watched host
- * answered 5xx and each watched Worker failed, and emails when that crosses a line. A health check
- * only proves one URL works; this catches the page or API that broke while it still answers.
+ * answered 5xx and each watched Worker and its Durable Objects failed, and emails when that crosses
+ * a line. A health check only proves one URL works; this catches the page or API that broke while
+ * it still answers.
  */
 export interface ErrorWatch {
 	/** The account whose Workers are watched, and the zone whose hosts are. */
@@ -89,7 +90,10 @@ export function errorWatchOf(setting: unknown): ErrorWatch | undefined {
 
 /** Something that crossed the line in a window. */
 export interface Finding {
-	/** `http:<host>`, `worker:<script>`, or `watch` when the analytics couldn't be read. */
+	/**
+	 * `http:<host>`, `worker:<script>`, `objects:<script>` for its Durable Objects, or `watch` when
+	 * the analytics couldn't be read.
+	 */
 	key: string;
 	text: string;
 	errors: number;
@@ -100,6 +104,13 @@ const QUERY = `query ErrorWatch($account: String!, $zone: String!, $start: Time!
 	viewer {
 		accounts(filter: { accountTag: $account }) {
 			workersInvocationsAdaptive(limit: 1000, filter: { datetime_geq: $start, datetime_lt: $end }) {
+				dimensions { scriptName status }
+				sum { requests errors }
+			}
+			durableObjectsInvocationsAdaptiveGroups(
+				limit: 1000
+				filter: { datetime_geq: $start, datetime_lt: $end }
+			) {
 				dimensions { scriptName status }
 				sum { requests errors }
 			}
@@ -120,14 +131,23 @@ const QUERY = `query ErrorWatch($account: String!, $zone: String!, $start: Time!
 	}
 }`;
 
+interface Invocations {
+	dimensions: { scriptName: string; status: string };
+	sum: { requests: number; errors: number };
+}
+
+/**
+ * Statuses that aren't a failure of ours. Cloudflare counts a client that went away as an error of
+ * a Durable Object (a browser closing a sync socket does it), but nothing failed on our side.
+ */
+const NOT_A_FAILURE = new Set(["success", "clientDisconnected"]);
+
 interface Answer {
 	data?: {
 		viewer?: {
 			accounts?: {
-				workersInvocationsAdaptive?: {
-					dimensions: { scriptName: string; status: string };
-					sum: { requests: number; errors: number };
-				}[];
+				workersInvocationsAdaptive?: Invocations[];
+				durableObjectsInvocationsAdaptiveGroups?: Invocations[];
 			}[];
 			zones?: {
 				all?: { count: number; dimensions: { clientRequestHTTPHost: string } }[];
@@ -227,26 +247,36 @@ export async function findErrors(
 		});
 	}
 
-	const invocations = viewer?.accounts?.[0]?.workersInvocationsAdaptive ?? [];
-	for (const script of watch.scripts) {
-		let total = 0;
-		const statuses = new Map<string, number>();
-		for (const row of invocations) {
-			if (row.dimensions.scriptName !== script) continue;
-			total += row.sum.requests;
-			if (row.sum.errors > 0) {
+	const account = viewer?.accounts?.[0];
+	const kinds = [
+		{ key: "worker", what: "The Worker", rows: account?.workersInvocationsAdaptive ?? [] },
+		{
+			key: "objects",
+			what: "The Durable Objects of",
+			rows: account?.durableObjectsInvocationsAdaptiveGroups ?? [],
+		},
+	];
+	for (const kind of kinds) {
+		for (const script of watch.scripts) {
+			let total = 0;
+			const statuses = new Map<string, number>();
+			for (const row of kind.rows) {
+				if (row.dimensions.scriptName !== script) continue;
+				total += row.sum.requests;
 				const status = row.dimensions.status;
-				statuses.set(status, (statuses.get(status) ?? 0) + row.sum.errors);
+				if (row.sum.errors > 0 && !NOT_A_FAILURE.has(status)) {
+					statuses.set(status, (statuses.get(status) ?? 0) + row.sum.errors);
+				}
 			}
+			const errors = [...statuses.values()].reduce((sum, n) => sum + n, 0);
+			if (!over(errors, total)) continue;
+			findings.push({
+				key: `${kind.key}:${script}`,
+				errors,
+				total,
+				text: `${kind.what} ${script} failed ${errors} of ${total} invocations (${share(errors, total)}) ${between}: ${tally(statuses)}.`,
+			});
 		}
-		const errors = [...statuses.values()].reduce((sum, n) => sum + n, 0);
-		if (!over(errors, total)) continue;
-		findings.push({
-			key: `worker:${script}`,
-			errors,
-			total,
-			text: `The Worker ${script} failed ${errors} of ${total} invocations (${share(errors, total)}) ${between}: ${tally(statuses)}.`,
-		});
 	}
 	return findings;
 }

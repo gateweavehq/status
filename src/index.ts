@@ -1,6 +1,9 @@
+import { sendMail } from "./alerts";
+import { watchErrors } from "./errors";
 import { tick } from "./monitor";
 import { FAVICON, renderPage } from "./page";
 import { statusData } from "./status";
+import { MINUTE } from "./time";
 
 const PAGE_HEADERS = {
 	"content-security-policy":
@@ -44,10 +47,29 @@ export default {
 	},
 
 	async scheduled(controller, env) {
-		const report = await tick(env, controller.scheduledTime);
-		// Workers Logs keeps this: service ids, outcomes and timings, never a body.
-		for (const change of report.changes) console.log(JSON.stringify({ change }));
-		if (report.alerts.failed > 0)
-			console.error(JSON.stringify({ alertsFailed: report.alerts.failed }));
+		const at = Math.floor(controller.scheduledTime / MINUTE) * MINUTE;
+		// Side by side, so a slow check doesn't hold up the error watch, and one failing doesn't stop
+		// the other.
+		const [checks, watch] = await Promise.allSettled([
+			tick(env, at),
+			watchErrors(env, at, (subject, text) => sendMail(env, subject, text)),
+		]);
+		// Workers Logs keeps these: service ids, keys, outcomes and timings, never a body.
+		if (checks.status === "fulfilled") {
+			for (const change of checks.value.changes) console.log(JSON.stringify({ change }));
+			if (checks.value.alerts.failed > 0) {
+				console.error(JSON.stringify({ alertsFailed: checks.value.alerts.failed }));
+			}
+		}
+		if (watch.status === "fulfilled" && watch.value.ran) {
+			console.log(
+				JSON.stringify({
+					errorWatch: watch.value.findings.map((f) => f.key),
+					alerted: watch.value.alerted,
+				}),
+			);
+		}
+		const failed = [checks, watch].find((result) => result.status === "rejected");
+		if (failed?.status === "rejected") throw failed.reason;
 	},
 } satisfies ExportedHandler<Env>;

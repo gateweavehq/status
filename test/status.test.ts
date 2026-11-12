@@ -4,6 +4,7 @@ import worker from "../src";
 import { messageFor } from "../src/alerts";
 import { checkOnce, check as checkService } from "../src/check";
 import { ConfigError, type Service, servicesOf } from "../src/config";
+import { errorWatchOf, LAG_MS, QUIET_MS, WINDOW_MS, watchErrors } from "../src/errors";
 import { type MonitorEnv, tick } from "../src/monitor";
 import { percent } from "../src/page";
 import { statusData } from "../src/status";
@@ -18,7 +19,7 @@ const T0 = Date.UTC(2026, 10, 12, 14, 0);
 beforeEach(async () => {
 	await control("/__reset");
 	await env.DB.batch(
-		["check_result", "daily", "service_state", "incident"].map((table) =>
+		["check_result", "daily", "service_state", "incident", "error_alert"].map((table) =>
 			env.DB.prepare(`DELETE FROM ${table}`),
 		),
 	);
@@ -289,6 +290,210 @@ describe("the monitor", () => {
 			{ at: T0 + 60 * MINUTE },
 		]);
 		expect(await rows("SELECT COUNT(DISTINCT day) AS n FROM daily")).toEqual([{ n: 2 }]);
+	});
+});
+
+describe("the error watch", () => {
+	const GRAPHQL = "https://api.cloudflare.com/client/v4/graphql";
+	/** A quarter hour, when the watch runs. */
+	const Q = Date.UTC(2026, 10, 12, 14, 15);
+
+	/** What the analytics answer: requests and 5xx per host, invocations and errors per Worker. */
+	async function analytics({
+		hosts = {},
+		failed = {},
+		workers = {},
+	}: {
+		hosts?: Record<string, number>;
+		failed?: Record<string, Record<number, number>>;
+		workers?: Record<string, Record<string, [number, number]>>;
+	}) {
+		const data = {
+			viewer: {
+				accounts: [
+					{
+						workersInvocationsAdaptive: Object.entries(workers).flatMap(([scriptName, statuses]) =>
+							Object.entries(statuses).map(([status, [requests, errors]]) => ({
+								dimensions: { scriptName, status },
+								sum: { requests, errors },
+							})),
+						),
+					},
+				],
+				zones: [
+					{
+						all: Object.entries(hosts).map(([host, count]) => ({
+							count,
+							dimensions: { clientRequestHTTPHost: host },
+						})),
+						failed: Object.entries(failed).flatMap(([host, statuses]) =>
+							Object.entries(statuses).map(([status, count]) => ({
+								count,
+								dimensions: { clientRequestHTTPHost: host, edgeResponseStatus: Number(status) },
+							})),
+						),
+					},
+				],
+			},
+		};
+		await answer(GRAPHQL, { body: JSON.stringify({ data, errors: null }) });
+	}
+
+	function watchEnv() {
+		return { ...env, ANALYTICS_TOKEN: "analytics-token" };
+	}
+
+	/** Runs the watch, sending alerts into `sent`, or failing to while `refuse` is set. */
+	function watcher() {
+		const sent: { subject: string; text: string }[] = [];
+		const state = { refuse: false };
+		const watch = (at: number) =>
+			watchErrors(watchEnv(), at, async (subject, text) => {
+				if (state.refuse) throw new Error("refused");
+				sent.push({ subject, text });
+			});
+		return { sent, state, watch };
+	}
+
+	it("reads the settings, and refuses ones it can't use", () => {
+		expect(errorWatchOf(undefined)).toBeUndefined();
+		expect(errorWatchOf("")).toBeUndefined();
+		const account = "0".repeat(32);
+		expect(errorWatchOf(JSON.stringify({ account, zone: account, hosts: ["a.test"] }))).toEqual({
+			account,
+			zone: account,
+			hosts: ["a.test"],
+			scripts: [],
+			minErrors: 10,
+			minShare: 0.05,
+		});
+		const good = { account, zone: account, hosts: ["a.test"] };
+		const wrong: [unknown, string][] = [
+			["{", "ERROR_WATCH is an object, as JSON."],
+			[[], "ERROR_WATCH is an object."],
+			[{ ...good, account: "acct" }, "account is the account's id"],
+			[{ ...good, zone: 1 }, "zone is the zone's id"],
+			[{ ...good, hosts: ["A Host"] }, "hosts is a list of names"],
+			[{ account, zone: account }, "names no host and no script"],
+			[{ ...good, minErrors: 0 }, "minErrors is a whole number"],
+			[{ ...good, minShare: 2 }, "minShare is a share"],
+		];
+		for (const [value, message] of wrong) {
+			expect(() => errorWatchOf(value), message).toThrow(ConfigError);
+			expect(() => errorWatchOf(value), message).toThrow(message);
+		}
+	});
+
+	it("runs on the quarter hours only, and asks about the 15 minutes that ended two minutes ago", async () => {
+		const { watch } = watcher();
+		await analytics({});
+		expect((await watch(Q + MINUTE)).ran).toBe(false);
+		expect(await watch(Q)).toEqual({ ran: true, findings: [], alerted: [] });
+		const last = await (await control(`/__last?url=${encodeURIComponent(GRAPHQL)}`)).json<{
+			authorization: string;
+			body: { variables: Record<string, string> };
+		}>();
+		expect(last.authorization).toBe("Bearer analytics-token");
+		expect(last.body.variables).toEqual({
+			account: "00000000000000000000000000000001",
+			zone: "00000000000000000000000000000002",
+			start: new Date(Q - LAG_MS - WINDOW_MS).toISOString(),
+			end: new Date(Q - LAG_MS).toISOString(),
+		});
+	});
+
+	it("doesn't run without its token", async () => {
+		expect((await watchErrors(env, Q, async () => {})).ran).toBe(false);
+	});
+
+	it("alerts when a host's 5xx cross both lines, ports and all, and not again for six hours", async () => {
+		const { sent, watch } = watcher();
+		await analytics({
+			hosts: { "track.test": 150, "track.test:443": 50, "site.test": 400, "other.test": 999 },
+			// site.test: 12 errors but 3%; other.test isn't watched.
+			failed: {
+				"track.test": { 500: 9 },
+				"track.test:443": { 503: 3 },
+				"site.test": { 502: 12 },
+				"other.test": { 500: 500 },
+			},
+		});
+		const report = await watch(Q);
+		expect(report.findings.map((f) => f.key)).toEqual(["http:track.test"]);
+		expect(sent).toEqual([
+			{
+				subject: "Errors on track.test",
+				text: expect.stringContaining(
+					"track.test answered 12 of 200 requests with a 5xx (6%) between 13:58 and 14:13 UTC: 500 ×9, 503 ×3.",
+				),
+			},
+		]);
+		expect(await watch(Q + WINDOW_MS)).toMatchObject({ alerted: [] });
+		expect(sent).toHaveLength(1);
+		expect((await watch(Q + QUIET_MS)).alerted).toEqual(["http:track.test"]);
+		expect(
+			await rows("SELECT key, errors, total, sent_at FROM error_alert ORDER BY window_end"),
+		).toEqual([
+			{ key: "http:track.test", errors: 12, total: 200, sent_at: Q },
+			{ key: "http:track.test", errors: 12, total: 200, sent_at: null },
+			{ key: "http:track.test", errors: 12, total: 200, sent_at: Q + QUIET_MS },
+		]);
+	});
+
+	it("alerts when a Worker's failures cross the lines, by what failed", async () => {
+		const { sent, watch } = watcher();
+		await analytics({
+			hosts: { "track.test": 1000 },
+			failed: { "track.test": { 500: 60 } },
+			workers: {
+				"track-worker": {
+					success: [180, 0],
+					scriptThrewException: [15, 15],
+					exceededResources: [5, 5],
+				},
+			},
+		});
+		await watch(Q);
+		expect(sent.map((m) => m.subject)).toEqual(["Errors on 2 services"]);
+		expect(sent[0]?.text).toContain(
+			"The Worker track-worker failed 20 of 200 invocations (10%) between 13:58 and 14:13 UTC: scriptThrewException ×15, exceededResources ×5.",
+		);
+	});
+
+	it("says when it can't read the analytics, once in six hours", async () => {
+		const { sent, watch } = watcher();
+		await answer(GRAPHQL, { status: 403, body: "{}" });
+		expect((await watch(Q)).alerted).toEqual(["watch"]);
+		expect(sent[0]).toEqual({
+			subject: "The error watch couldn't run",
+			text: expect.stringContaining(
+				"The error watch couldn't run: The analytics API answered 403.",
+			),
+		});
+		await answer(GRAPHQL, {
+			body: JSON.stringify({
+				data: null,
+				errors: [{ message: "not authorized for that account" }],
+			}),
+		});
+		await watch(Q + WINDOW_MS);
+		expect(sent).toHaveLength(1);
+		expect(await rows("SELECT text FROM error_alert ORDER BY window_end")).toEqual([
+			{ text: "The error watch couldn't run: The analytics API answered 403." },
+			{
+				text: "The error watch couldn't run: The analytics API refused the query: not authorized for that account",
+			},
+		]);
+	});
+
+	it("tries again on the next quarter hour when the alert couldn't go", async () => {
+		const { sent, state, watch } = watcher();
+		await analytics({ hosts: { "track.test": 20 }, failed: { "track.test": { 500: 20 } } });
+		state.refuse = true;
+		expect((await watch(Q)).alerted).toEqual([]);
+		state.refuse = false;
+		expect((await watch(Q + WINDOW_MS)).alerted).toEqual(["http:track.test"]);
+		expect(sent).toHaveLength(1);
 	});
 });
 

@@ -12,6 +12,13 @@ incidents, emails an alert when a service goes down and when it comes back, and 
 - **Alerts** go by email through Email Service's binding to `ALERT_TO`. One that couldn't go is
   tried again each minute for three days, and an outage that ended before its alert went is told
   once.
+- **The error watch** catches what a health check can't: a page or API that broke while the
+  service still answers. Every 15 minutes it asks Cloudflare's GraphQL analytics how often each
+  watched host answered 5xx and each watched Worker failed (an exception, a limit), over the 15
+  minutes that ended two minutes before. It emails when a service has at least `minErrors` errors
+  and `minShare` of its requests failed, then stays quiet about that service for six hours. It
+  needs `ERROR_WATCH` and the secret `ANALYTICS_TOKEN`: a token with Account Analytics Read on the
+  account and Analytics Read on the zone. If the analytics can't be read, that is emailed too.
 - **The page** shows each service's state, the last 90 days, and the incidents of the last 30. It
   loads nothing else and reloads every minute. `/api/status` has the same data as JSON.
 - **What it keeps:** each check for a week, each day's counts and the incidents for good. No

@@ -4,6 +4,11 @@ interface StatusSettings {
 	ALERT_TO?: string;
 	/** The page alerts link to, https://status.gateweave.com when it isn't set. */
 	PAGE_URL?: string;
+	/**
+	 * An API token that may read the account's and the zone's analytics, for the error watch
+	 * (ERROR_WATCH). Without it, the watch doesn't run.
+	 */
+	ANALYTICS_TOKEN?: string;
 }
 
 interface Env extends StatusSettings {}

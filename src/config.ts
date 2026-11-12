@@ -17,8 +17,19 @@ export class ConfigError extends Error {
 
 const ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
-/** Reads `SERVICES`, refusing anything it can't check as written. */
-export function servicesOf(value: unknown): Service[] {
+/**
+ * Reads `SERVICES`, refusing anything it can't check as written. It may also come as JSON text,
+ * as the dashboard and `wrangler deploy --var` set it.
+ */
+export function servicesOf(setting: unknown): Service[] {
+	let value = setting;
+	if (typeof setting === "string") {
+		try {
+			value = JSON.parse(setting);
+		} catch {
+			throw new ConfigError("SERVICES is a list of services to check, as JSON.");
+		}
+	}
 	if (!Array.isArray(value) || value.length === 0) {
 		throw new ConfigError("SERVICES is a list of services to check.");
 	}

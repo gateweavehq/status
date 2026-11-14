@@ -208,11 +208,12 @@ function issueKeyOf(result: Record<string, unknown>): string {
 async function findIssue(
 	settings: TrackSettings,
 	send: typeof fetch,
+	team: string,
 	title: string,
 ): Promise<string | undefined> {
 	const found = await callTool(settings, send, "search_issues", {
 		workspace: settings.workspace,
-		team: settings.team,
+		team,
 		text: title.slice(0, 200),
 		limit: 50,
 	});
@@ -258,7 +259,7 @@ async function claim(
  */
 export async function fileIncidents(
 	env: TrackEnv,
-	services: Pick<Service, "id" | "name">[],
+	services: Pick<Service, "id" | "name" | "team">[],
 	at: number,
 	send: typeof fetch = fetch,
 ): Promise<TrackReport> {
@@ -290,7 +291,8 @@ export async function fileIncidents(
 			.all<TrackedIncident>();
 		await Promise.all(
 			due.results.map(async (incident) => {
-				const service = services.find((s) => s.id === incident.service) ?? {
+				const known = services.find((s) => s.id === incident.service);
+				const service = known ?? {
 					name: incident.service,
 				};
 				let current = incident;
@@ -298,15 +300,17 @@ export async function fileIncidents(
 					if (current.track_issue === null) {
 						if (!(await claim(db, current, at, "file"))) return;
 						const title = titleOf(current, service);
+						// A service's own team, so a product's outage is on that product's board.
+						const team = known?.team ?? settings.team;
 						// An earlier try may have made the issue and died before noting it.
 						const found =
-							current.track_attempts > 0 ? await findIssue(settings, send, title) : undefined;
+							current.track_attempts > 0 ? await findIssue(settings, send, team, title) : undefined;
 						const issue =
 							found ??
 							issueKeyOf(
 								await callTool(settings, send, "create_issue", {
 									workspace: settings.workspace,
-									team: settings.team,
+									team,
 									title,
 									description: descriptionOf(current, service, pageUrl),
 									priority: current.kind === "slow" ? "medium" : "high",

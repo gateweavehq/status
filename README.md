@@ -68,7 +68,7 @@ Filing incidents in Track is off until these are set, and nothing else changes w
 | ----------------- | ------ | -------------------------------------------------------------------------- |
 | `TRACK_URL`       | var    | Track's address, such as `https://track.gateweave.com`                     |
 | `TRACK_WORKSPACE` | var    | The workspace's slug                                                       |
-| `TRACK_TEAM`      | var    | The key of the team the issues go to, such as `WEB`                        |
+| `TRACK_TEAM`      | var    | The team the issues go to, such as `WEB`, unless a service names a `team`  |
 | `TRACK_LABELS`    | var    | Label names, comma-separated, such as `Operations`; they must exist        |
 | `TRACK_KEY`       | secret | An agent member's key (`gwt_` and 43 characters), made in Track's settings |
 

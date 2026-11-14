@@ -2,6 +2,7 @@ import { type AlertEnv, sendAlerts } from "./alerts";
 import { type CheckResult, check, SLOW_MS } from "./check";
 import { servicesOf } from "./config";
 import { DAY, dayOf, HOUR, MINUTE } from "./time";
+import { fileIncidents, type TrackEnv, type TrackReport } from "./track";
 
 /** Failed checks in a row that take a service down: two, so about two minutes. */
 export const DOWN_AFTER = 2;
@@ -12,7 +13,7 @@ export const QUICK_AFTER = 3;
 /** Each check is kept this long; the days' counts are kept for good. */
 export const KEEP_CHECKS_MS = 7 * DAY;
 
-export interface MonitorEnv extends AlertEnv {
+export interface MonitorEnv extends AlertEnv, TrackEnv {
 	SERVICES: unknown;
 }
 
@@ -115,6 +116,8 @@ export function nextState(
 	};
 }
 
+const NO_TRACK: TrackReport = { filed: 0, noted: 0, failed: 0, gaveUp: 0, misconfigured: false };
+
 export interface TickReport {
 	at: number;
 	/** True when another run had checked this minute already. */
@@ -122,11 +125,12 @@ export interface TickReport {
 	results: CheckResult[];
 	changes: Change[];
 	alerts: { sent: number; failed: number };
+	track: TrackReport;
 }
 
 /**
  * One minute's work: checks every service, keeps the results, takes services down or brings them
- * back, opens and closes incidents, and sends the alerts that are due.
+ * back, opens and closes incidents, sends the alerts that are due and files the incidents in Track.
  */
 export async function tick(
 	env: MonitorEnv,
@@ -142,7 +146,16 @@ export async function tick(
 	const done = await env.DB.prepare("SELECT 1 FROM check_result WHERE at = ?1 LIMIT 1")
 		.bind(at)
 		.first();
-	if (done) return { at, skipped: true, results: [], changes: [], alerts: { sent: 0, failed: 0 } };
+	if (done) {
+		return {
+			at,
+			skipped: true,
+			results: [],
+			changes: [],
+			alerts: { sent: 0, failed: 0 },
+			track: NO_TRACK,
+		};
+	}
 
 	const results = await Promise.all(
 		services.map((service) => check(service, send, retryAfter === undefined ? {} : { retryAfter })),
@@ -265,5 +278,7 @@ export async function tick(
 	}
 	await db.batch(statements);
 	const alerts = await sendAlerts(env, services, at);
-	return { at, skipped: false, results, changes, alerts };
+	// After the alerts, so Track being slow or down never holds an email back.
+	const track = await fileIncidents(env, services, at, send);
+	return { at, skipped: false, results, changes, alerts, track };
 }

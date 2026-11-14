@@ -60,6 +60,20 @@ export default {
 			if (checks.value.alerts.failed > 0) {
 				console.error(JSON.stringify({ alertsFailed: checks.value.alerts.failed }));
 			}
+			// Counts only: what Track answered, and the key, are never logged.
+			const { track } = checks.value;
+			if (track.filed > 0 || track.noted > 0 || track.gaveUp > 0) {
+				console.log(
+					JSON.stringify({
+						track: { filed: track.filed, noted: track.noted, gaveUp: track.gaveUp },
+					}),
+				);
+			}
+			if (track.failed > 0 || track.misconfigured) {
+				console.error(
+					JSON.stringify({ trackFailed: track.failed, misconfigured: track.misconfigured }),
+				);
+			}
 		}
 		if (watch.status === "fulfilled" && watch.value.ran) {
 			console.log(

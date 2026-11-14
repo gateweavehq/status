@@ -13,6 +13,7 @@ Gateweave Status checks Gateweave Cloud's services every minute and serves
 | `src/check.ts`   | One check of one service                                   |
 | `src/monitor.ts` | A minute's work: checks, history, incidents                |
 | `src/alerts.ts`  | Alert emails                                               |
+| `src/track.ts`   | The Track issue for each incident, and its end comment     |
 | `src/status.ts`  | What the page shows, read from D1                          |
 | `src/page.ts`    | The HTML                                                   |
 | `migrations/`    | D1 migrations, append-only                                 |
@@ -30,6 +31,9 @@ the type check and the tests. Run it before calling a change done.
 - **Migrations are append-only.** Never edit one that was merged.
 - **An alert goes once.** Mark it in D1 when it has gone; one that couldn't go is retried, for
   three days.
+- **Filing in Track never holds an alert back.** It runs after the alerts, catches its own
+  failures, and keeps its progress on the incident's row (`track_*`), so an incident is filed once.
+  The key is never logged or kept.
 - The page loads nothing from elsewhere: no scripts, fonts or images. The CSP says so.
 - TypeScript is strict, with `noUncheckedIndexedAccess`. Biome formats: tabs, 100 columns.
 - Dependencies are pinned to exact versions.

@@ -27,30 +27,35 @@
 			{
 				"id": "id",
 				"name": "ID",
+				"team": "ID",
 				"url": "https://id.gateweave.com/api/auth/jwks",
 				"contains": "\"keys\""
 			},
 			{
 				"id": "track",
 				"name": "Track",
+				"team": "TRK",
 				"url": "https://track.gateweave.com/api/auth/ok",
 				"contains": "\"ok\":true"
 			},
 			{
 				"id": "agents",
 				"name": "Agents",
+				"team": "AGT",
 				"url": "https://agents.gateweave.com/api/auth/ok",
 				"contains": "\"ok\":true"
 			},
 			{
 				"id": "guard",
 				"name": "Guard",
+				"team": "GRD",
 				"url": "https://guard.gateweave.com/api/auth/ok",
 				"contains": "\"ok\":true"
 			},
 			{
 				"id": "track-demo",
 				"name": "Track demo",
+				"team": "TRK",
 				"url": "https://track-demo.gateweave.com/api/auth/ok",
 				"contains": "\"ok\":true"
 			}
@@ -89,7 +94,8 @@
 		// Each incident can also be filed as an issue in Track (src/track.ts), with a comment when it
 		// ends. Set TRACK_URL, TRACK_WORKSPACE and TRACK_TEAM here, TRACK_LABELS if the issues get
 		// labels, and the secret TRACK_KEY (an agent member's key). Without them nothing is filed.
-		// Gateweave's go to its own workspace, as the agent member "Status".
+		// Gateweave's go to its own workspace, as the agent member "Status": each product's to its
+		// own team (`team` on a service above), and the website's to TRACK_TEAM.
 		"TRACK_URL": "https://track.gateweave.com",
 		"TRACK_WORKSPACE": "gateweave",
 		"TRACK_TEAM": "WEB",

@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
+import { servicesOf } from "../src/config";
 import { type MonitorEnv, tick } from "../src/monitor";
 import { fileIncidents, SLOW_FILE_AFTER_MS, TRACK_RETRY_MS, trackOf } from "../src/track";
 
@@ -297,6 +298,36 @@ describe("filing an incident in Track", () => {
 		expect(track.named("search_issues")).toHaveLength(1);
 		expect(track.issues).toHaveLength(1);
 		expect(await rows("SELECT track_issue FROM incident")).toEqual([{ track_issue: "WEB-100" }]);
+	});
+
+	it("files in the service's own team when it names one, and looks there on a retry", async () => {
+		const track = fakeTrack();
+		track.loseNextAnswer = true;
+		// The same service, now saying its incidents belong to the Track team.
+		const own = {
+			...SETTINGS,
+			SERVICES: [{ id: "track", name: "Track", url: TRACK, team: "TRK" }],
+		};
+		await run(T0, track, undefined, own);
+		await control("/__set", { [TRACK]: { status: 503 } });
+		await run(T0 + MINUTE, track, undefined, own);
+		const first = await run(T0 + 2 * MINUTE, track, undefined, own);
+		expect(first.track.failed).toBe(1);
+		expect(track.named("create_issue")[0]?.args).toMatchObject({ team: "TRK" });
+
+		const retry = await run(T0 + 3 * MINUTE, track, undefined, own);
+		expect(retry.track).toMatchObject({ filed: 1, failed: 0 });
+		expect(track.named("search_issues")[0]?.args).toMatchObject({ team: "TRK" });
+		expect(track.issues).toHaveLength(1);
+	});
+
+	it("refuses a service's team that isn't a team's key", () => {
+		const service = { id: "track", name: "Track", url: TRACK };
+		expect(servicesOf([{ ...service, team: "TRK" }])[0]?.team).toBe("TRK");
+		expect(servicesOf([service])[0]?.team).toBeUndefined();
+		for (const team of ["trk", "", "TOO-LONG-A-KEY", 7]) {
+			expect(() => servicesOf([{ ...service, team }])).toThrow("is a Track team's key");
+		}
 	});
 
 	it("files a slow spell only once it has lasted 15 minutes", async () => {

@@ -8,6 +8,8 @@ export interface Service {
 	expect: number;
 	/** Text the body holds when the service works, if its status alone doesn't say. */
 	contains?: string;
+	/** The key of the Track team this service's incidents are filed in, when not the default. */
+	team?: string;
 }
 
 /** A setting the Worker can't run with. Its message says which and why. */
@@ -16,6 +18,7 @@ export class ConfigError extends Error {
 }
 
 const ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const TEAM = /^[A-Z][A-Z0-9]{0,9}$/;
 
 /**
  * Reads `SERVICES`, refusing anything it can't check as written. It may also come as JSON text,
@@ -38,7 +41,7 @@ export function servicesOf(setting: unknown): Service[] {
 		const where = `SERVICES[${index}]`;
 		if (typeof item !== "object" || item === null)
 			throw new ConfigError(`${where} isn't an object.`);
-		const { id, name, url, expect = 200, contains } = item as Record<string, unknown>;
+		const { id, name, url, expect = 200, contains, team } = item as Record<string, unknown>;
 		if (typeof id !== "string" || !ID.test(id)) {
 			throw new ConfigError(`${where}.id is lower-case letters, digits and dashes, up to 32.`);
 		}
@@ -60,6 +63,10 @@ export function servicesOf(setting: unknown): Service[] {
 		if (contains !== undefined && (typeof contains !== "string" || contains === "")) {
 			throw new ConfigError(`${where}.contains is text the body holds.`);
 		}
-		return { id, name: name.trim(), url: parsed.href, expect, ...(contains ? { contains } : {}) };
+		if (team !== undefined && (typeof team !== "string" || !TEAM.test(team))) {
+			throw new ConfigError(`${where}.team is a Track team's key, such as TRK.`);
+		}
+		const more = { ...(contains ? { contains } : {}), ...(team ? { team } : {}) };
+		return { id, name: name.trim(), url: parsed.href, expect, ...more };
 	});
 }

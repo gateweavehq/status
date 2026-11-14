@@ -43,6 +43,12 @@
 				"contains": "\"ok\":true"
 			},
 			{
+				"id": "guard",
+				"name": "Guard",
+				"url": "https://guard.gateweave.com/api/auth/ok",
+				"contains": "\"ok\":true"
+			},
+			{
 				"id": "track-demo",
 				"name": "Track demo",
 				"url": "https://track-demo.gateweave.com/api/auth/ok",
@@ -62,6 +68,7 @@
 				"id.gateweave.com",
 				"track.gateweave.com",
 				"agents.gateweave.com",
+				"guard.gateweave.com",
 				"track-demo.gateweave.com",
 				"pkg.gateweave.com",
 				"status.gateweave.com"
@@ -71,6 +78,7 @@
 				"gateweave-id",
 				"gateweave-track",
 				"gateweave-agents",
+				"gateweave-guard",
 				"gateweave-track-demo",
 				"gateweave-backup",
 				"gateweave-status"

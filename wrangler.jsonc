@@ -86,6 +86,9 @@
 			"minErrors": 10,
 			"minShare": 0.05
 		},
+		// Each incident can also be filed as an issue in Track (src/track.ts), with a comment when it
+		// ends. Set TRACK_URL, TRACK_WORKSPACE and TRACK_TEAM here, TRACK_LABELS if the issues get
+		// labels, and the secret TRACK_KEY (an agent member's key). Without them nothing is filed.
 		// Alerts go from this address to the secret ALERT_TO (one address or a comma-separated
 		// list). Without ALERT_TO, incidents are only shown on the page.
 		"ALERT_FROM": "Gateweave Status <status@gateweave.com>"

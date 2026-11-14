@@ -9,6 +9,15 @@ interface StatusSettings {
 	 * (ERROR_WATCH). Without it, the watch doesn't run.
 	 */
 	ANALYTICS_TOKEN?: string;
+	/**
+	 * Filing each incident as an issue in Track, with the comment when it ends. Without all four
+	 * of the first, nothing is filed. TRACK_KEY is an agent member's key, a secret.
+	 */
+	TRACK_URL?: string;
+	TRACK_WORKSPACE?: string;
+	TRACK_TEAM?: string;
+	TRACK_LABELS?: string;
+	TRACK_KEY?: string;
 }
 
 interface Env extends StatusSettings {}

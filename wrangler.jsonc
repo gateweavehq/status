@@ -53,6 +53,13 @@
 				"contains": "\"ok\":true"
 			},
 			{
+				"id": "mail",
+				"name": "Mail",
+				"team": "MAIL",
+				"url": "https://mail.gateweave.com/api/auth/ok",
+				"contains": "\"ok\":true"
+			},
+			{
 				"id": "track-demo",
 				"name": "Track demo",
 				"team": "TRK",
@@ -74,6 +81,7 @@
 				"track.gateweave.com",
 				"agents.gateweave.com",
 				"guard.gateweave.com",
+				"mail.gateweave.com",
 				"track-demo.gateweave.com",
 				"pkg.gateweave.com",
 				"status.gateweave.com"
@@ -84,6 +92,8 @@
 				"gateweave-track",
 				"gateweave-agents",
 				"gateweave-guard",
+				// Mail's production Worker: its `cloud` environment has a name of its own.
+				"gateweave-mail-cloud",
 				"gateweave-track-demo",
 				"gateweave-backup",
 				"gateweave-status"

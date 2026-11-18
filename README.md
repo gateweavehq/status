@@ -1,4 +1,8 @@
-# Gateweave Status
+<p align="center">
+  <img src=".github/logo.svg" width="96" height="96" alt="">
+</p>
+
+<h1 align="center">Gateweave Status</h1>
 
 The status page of Gateweave Cloud, at [status.gateweave.com](https://status.gateweave.com). One
 Cloudflare Worker checks each service every minute, keeps the results in D1, opens and closes

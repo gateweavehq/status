@@ -1,0 +1,31 @@
+name: Bug report
+description: Something in Gateweave Status does not work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the status page
+        2. Check the service state
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The commit you are running.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Worker logs, if relevant. Remove secrets before posting.
+      render: text

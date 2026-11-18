@@ -57,6 +57,9 @@ Requirements: Node.js 24 and pnpm 12.
 | `pnpm dev`        | Run it locally; `--test-scheduled` runs checks |
 | `pnpm run deploy` | Deploy (`wrangler.jsonc` holds the services)   |
 
+See [architecture](docs/architecture.md) for how checks and incidents work, and
+[self-hosting](docs/self-hosting.md) for running your own copy.
+
 To deploy your own: create the database (`npx wrangler d1 create gateweave-status`), put its id in
 `wrangler.jsonc` with your own `SERVICES`, route and sender, then:
 

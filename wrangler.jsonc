@@ -60,6 +60,13 @@
 				"contains": "\"ok\":true"
 			},
 			{
+				"id": "growth",
+				"name": "Growth",
+				"team": "MMO",
+				"url": "https://growth.gateweave.com/health",
+				"contains": "\"ok\":true"
+			},
+			{
 				"id": "track-demo",
 				"name": "Track demo",
 				"team": "TRK",
@@ -82,6 +89,7 @@
 				"agents.gateweave.com",
 				"guard.gateweave.com",
 				"mail.gateweave.com",
+				"growth.gateweave.com",
 				"track-demo.gateweave.com",
 				"pkg.gateweave.com",
 				"status.gateweave.com"
@@ -94,6 +102,7 @@
 				"gateweave-guard",
 				// Mail's production Worker: its `cloud` environment has a name of its own.
 				"gateweave-mail-cloud",
+				"gateweave-growth",
 				"gateweave-track-demo",
 				"gateweave-backup",
 				"gateweave-status"

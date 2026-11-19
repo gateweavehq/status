@@ -666,6 +666,31 @@ describe("the page", () => {
 		expect(await (await page()).text()).toContain("The checks have stopped");
 	});
 
+	it("tells a monitor outside by its status alone whether the checks still run", async () => {
+		const empty = await page("/api/fresh");
+		expect(empty.status).toBe(503);
+		expect(await empty.text()).toBe("No check has run yet.");
+
+		await run(Date.now() - MINUTE);
+		const fresh = await page("/api/fresh");
+		expect(fresh.status).toBe(200);
+		expect(fresh.headers.get("cache-control")).toBe("no-store");
+		expect(await fresh.text()).toMatch(/^Checked \d+ min ago\.$/);
+		// UptimeRobot's free plan asks with HEAD.
+		const head = await worker.fetch(
+			new Request("https://status.test/api/fresh", { method: "HEAD" }),
+			env,
+		);
+		expect(head.status).toBe(200);
+
+		await env.DB.prepare("UPDATE service_state SET checked_at = ?1")
+			.bind(Date.now() - 10 * MINUTE)
+			.run();
+		const stopped = await page("/api/fresh");
+		expect(stopped.status).toBe(503);
+		expect(await stopped.text()).toBe("The checks have stopped: the last ran 10 min ago.");
+	});
+
 	it("escapes what it shows", async () => {
 		// A name no real setting has, to show it can't reach the page as markup.
 		const named = { ...env, SERVICES: [{ id: "x", name: "<b>X</b>", url: "https://x.test/" }] };

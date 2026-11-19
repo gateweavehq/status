@@ -45,6 +45,9 @@ page.
 
 It runs on Cloudflare, like what it checks, so it can't report an outage of Cloudflare itself. It
 reports the failures of one product: a bad deploy, a broken database, an expired certificate.
+For the rest, point a monitor outside Cloudflare at `/api/fresh`: it answers 200 while the checks
+run and 503 once none has run for five minutes, to `GET` and `HEAD` alike, so the monitor learns
+both that the page is down and that the checks behind it stopped.
 
 ## Running it
 

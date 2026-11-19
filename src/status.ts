@@ -49,6 +49,17 @@ export interface StatusData {
 	incidents: IncidentView[];
 }
 
+/**
+ * When the last check ran, for any service: what a monitor outside Cloudflare asks to learn that
+ * the checks themselves stopped, which the page alone tells it only in words. Null before any.
+ */
+export async function lastCheckAt(env: { DB: D1Database }): Promise<number | null> {
+	const row = await env.DB.prepare("SELECT MAX(checked_at) AS at FROM service_state").first<{
+		at: number | null;
+	}>();
+	return row?.at ?? null;
+}
+
 /** Where every service stands now, its last 90 days, and the recent incidents. */
 export async function statusData(
 	env: { DB: D1Database; SERVICES: unknown },

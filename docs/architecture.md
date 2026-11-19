@@ -64,7 +64,9 @@ incidents from the last 30 days plus open ones. A service with no check in five 
 `unknown`. `src/page.ts` renders the HTML on the server. It loads no outside script, font or
 image and reloads every minute.
 
-`src/index.ts` serves `GET` and `HEAD` for `/`, `/api/status` (the same data as JSON), and
-`/favicon.svg`. The page and JSON use `Cache-Control: no-cache`, so they are checked again rather
+`src/index.ts` serves `GET` and `HEAD` for `/`, `/api/status` (the same data as JSON),
+`/api/fresh` and `/favicon.svg`. `/api/fresh` is for a monitor outside Cloudflare, which reads only
+the status code: 200 while the newest check of any service is at most `STALE_MS` old, 503 after
+that or before any check, with one line of text saying which, and `Cache-Control: no-store`. The page and JSON use `Cache-Control: no-cache`, so they are checked again rather
 than served as stale status. The favicon is public and cached for one day. The page has a content
 security policy that allows its inline styles and its own image only.

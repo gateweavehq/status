@@ -2,8 +2,8 @@ import { sendMail } from "./alerts";
 import { watchErrors } from "./errors";
 import { tick } from "./monitor";
 import { FAVICON, renderPage } from "./page";
-import { statusData } from "./status";
-import { MINUTE } from "./time";
+import { lastCheckAt, STALE_MS, statusData } from "./status";
+import { duration, MINUTE } from "./time";
 
 const PAGE_HEADERS = {
 	"content-security-policy":
@@ -37,6 +37,27 @@ export default {
 						"access-control-allow-origin": "*",
 					},
 				});
+			// For a monitor outside Cloudflare, which sees only the status code (and on UptimeRobot's free
+			// plan sends HEAD): 503 once no check has run for as long as the page calls "stopped".
+			case "/api/fresh": {
+				const now = Date.now();
+				const at = await lastCheckAt(env);
+				const fresh = at !== null && now - at <= STALE_MS;
+				const text =
+					at === null
+						? "No check has run yet."
+						: fresh
+							? `Checked ${duration(now - at)} ago.`
+							: `The checks have stopped: the last ran ${duration(now - at)} ago.`;
+				return new Response(text, {
+					status: fresh ? 200 : 503,
+					headers: {
+						...PAGE_HEADERS,
+						"content-type": "text/plain; charset=utf-8",
+						"cache-control": "no-store",
+					},
+				});
+			}
 			case "/favicon.svg":
 				return new Response(FAVICON, {
 					headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" },

@@ -42,8 +42,11 @@ with a growing wait for up to three days and stores its progress on the incident
 
 Every 15 minutes, `src/errors.ts` also asks Cloudflare analytics about 5xx answers on configured
 hosts and failures of configured Workers and their Durable Objects. It checks a 15-minute window
-that ended two minutes earlier. The current threshold is ten errors and 5% of requests. A key
-that alerted stays quiet for six hours. This catches failures a health URL may miss.
+that ended two minutes earlier. The current threshold is ten events and 5% of requests.
+Execution errors and response stream disconnects use separate keys. If neither crosses the
+threshold on its own but their total does, a mixed finding uses its own key. Each key that alerted
+stays quiet for six hours. Existing alerts keep their history, and a split category may alert once
+during the transition even if a recent combined alert went out.
 
 ## What D1 stores
 

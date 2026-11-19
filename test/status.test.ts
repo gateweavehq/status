@@ -561,7 +561,7 @@ describe("the error watch", () => {
 		});
 		const report = await watch(Q);
 		expect(report.findings.map((f) => [f.key, f.errors, f.total])).toEqual([
-			["objects:track-worker", 30, 530],
+			["objects-errors:track-worker", 30, 530],
 		]);
 		expect(sent[0]).toEqual({
 			subject: "Errors on track-worker",
@@ -569,6 +569,90 @@ describe("the error watch", () => {
 				"The Durable Objects of track-worker failed 30 of 530 invocations (6%)",
 			),
 		});
+	});
+
+	it("alerts for stream disconnects without starting the Durable Objects' error quiet time", async () => {
+		const { sent, watch } = watcher();
+		await env.DB.prepare(
+			"INSERT INTO error_alert (key, window_end, errors, total, text, sent_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+		)
+			.bind(
+				"objects:track-worker",
+				Q - WINDOW_MS - LAG_MS,
+				22,
+				122,
+				"Combined alert",
+				Q - WINDOW_MS,
+			)
+			.run();
+		await analytics({
+			objects: {
+				"track-worker": {
+					success: [100, 0],
+					responseStreamDisconnected: [20, 20],
+					internalError: [2, 2],
+				},
+			},
+		});
+		const report = await watch(Q);
+		expect(report.alerted).toEqual(["objects-streams:track-worker"]);
+		expect(report.findings.map(({ key, errors, total }) => [key, errors, total])).toEqual([
+			["objects-streams:track-worker", 20, 122],
+		]);
+		expect(sent[0]?.subject).toBe("Response stream disconnects on track-worker");
+		expect(sent[0]?.text).toContain("20 response stream disconnects in 122 invocations (16%)");
+		expect(sent[0]?.text).toContain("Other errors in this window: internalError ×2.");
+
+		await analytics({
+			objects: {
+				"track-worker": {
+					success: [100, 0],
+					responseStreamDisconnected: [20, 20],
+					internalError: [12, 12],
+				},
+			},
+		});
+		expect((await watch(Q + WINDOW_MS)).alerted).toEqual(["objects-errors:track-worker"]);
+		expect(sent[1]?.subject).toBe("Errors on track-worker");
+		expect(sent[1]?.text).toContain("failed 12 of 132 invocations (9%)");
+		expect(sent[1]?.text).not.toContain("responseStreamDisconnected");
+		expect((await watch(Q + 2 * WINDOW_MS)).alerted).toEqual([]);
+		expect((await watch(Q + QUIET_MS)).alerted).toEqual(["objects-streams:track-worker"]);
+	});
+
+	it("keeps alerting for a combined Worker spike when both categories are below the threshold", async () => {
+		const { sent, watch } = watcher();
+		await analytics({
+			workers: {
+				"track-worker": {
+					success: [88, 0],
+					responseStreamDisconnected: [6, 6],
+					internalError: [6, 6],
+				},
+			},
+		});
+		expect((await watch(Q)).alerted).toEqual(["worker-mixed:track-worker"]);
+		expect(sent[0]?.subject).toBe("Errors and response stream disconnects on track-worker");
+		expect(sent[0]?.text).toContain(
+			"6 errors and 6 response stream disconnects in 100 invocations",
+		);
+
+		await analytics({
+			workers: {
+				"track-worker": {
+					success: [80, 0],
+					responseStreamDisconnected: [10, 10],
+					internalError: [10, 10],
+				},
+			},
+		});
+		expect((await watch(Q + WINDOW_MS)).alerted).toEqual([
+			"worker-errors:track-worker",
+			"worker-streams:track-worker",
+		]);
+		expect(sent[1]?.subject).toBe("Gateweave Status alerts");
+		expect(sent[1]?.text).toContain("failed 10 of 100 invocations");
+		expect(sent[1]?.text).toContain("10 response stream disconnects in 100 invocations");
 	});
 
 	it("says when it can't read the analytics, once in six hours", async () => {

@@ -22,7 +22,7 @@ export interface ErrorWatch {
 export const WINDOW_MS = 15 * MINUTE;
 /** Analytics take a minute or two to arrive, so a window ends this long before the check. */
 export const LAG_MS = 2 * MINUTE;
-/** The same service alerts again after this long at the earliest. */
+/** The same type of finding for a service alerts again after this long at the earliest. */
 export const QUIET_MS = 6 * HOUR;
 /** Kept for a look back at what alerted. */
 const KEEP_MS = 90 * 24 * HOUR;
@@ -91,10 +91,11 @@ export function errorWatchOf(setting: unknown): ErrorWatch | undefined {
 /** Something that crossed the line in a window. */
 export interface Finding {
 	/**
-	 * `http:<host>`, `worker:<script>`, `objects:<script>` for its Durable Objects, or `watch` when
-	 * the analytics couldn't be read.
+	 * `http:<host>`, a Worker or Durable Object key with an alert type, or `watch` when the
+	 * analytics couldn't be read.
 	 */
 	key: string;
+	subject?: string;
 	text: string;
 	errors: number;
 	total: number;
@@ -141,6 +142,7 @@ interface Invocations {
  * a Durable Object (a browser closing a sync socket does it), but nothing failed on our side.
  */
 const NOT_A_FAILURE = new Set(["success", "clientDisconnected"]);
+const STREAM_DISCONNECTED = "responseStreamDisconnected";
 
 interface Answer {
 	data?: {
@@ -268,14 +270,42 @@ export async function findErrors(
 					statuses.set(status, (statuses.get(status) ?? 0) + row.sum.errors);
 				}
 			}
+			const disconnects = statuses.get(STREAM_DISCONNECTED) ?? 0;
+			statuses.delete(STREAM_DISCONNECTED);
 			const errors = [...statuses.values()].reduce((sum, n) => sum + n, 0);
-			if (!over(errors, total)) continue;
-			findings.push({
-				key: `${kind.key}:${script}`,
-				errors,
-				total,
-				text: `${kind.what} ${script} failed ${errors} of ${total} invocations (${share(errors, total)}) ${between}: ${tally(statuses)}.`,
-			});
+			const errorSpike = over(errors, total);
+			const streamSpike = over(disconnects, total);
+			const service = `${kind.what} ${script}`;
+			if (errorSpike) {
+				findings.push({
+					key: `${kind.key}-errors:${script}`,
+					errors,
+					total,
+					text: `${service} failed ${errors} of ${total} invocations (${share(errors, total)}) ${between}: ${tally(statuses)}.`,
+				});
+			}
+			if (streamSpike) {
+				const other =
+					!errorSpike && errors > 0 ? ` Other errors in this window: ${tally(statuses)}.` : "";
+				findings.push({
+					key: `${kind.key}-streams:${script}`,
+					subject: `Response stream disconnects on ${script}`,
+					errors: disconnects,
+					total,
+					text: `${service} had ${disconnects} response stream disconnects in ${total} invocations (${share(disconnects, total)}) ${between}.${other}`,
+				});
+			}
+			// Keep detecting spikes that cross the old combined threshold. A mixed alert must not
+			// start either category's quiet time.
+			if (!errorSpike && !streamSpike && over(errors + disconnects, total)) {
+				findings.push({
+					key: `${kind.key}-mixed:${script}`,
+					subject: `Errors and response stream disconnects on ${script}`,
+					errors: errors + disconnects,
+					total,
+					text: `${service} had ${errors} errors and ${disconnects} response stream disconnects in ${total} invocations (${share(errors + disconnects, total)}) ${between}: ${tally(statuses)}.`,
+				});
+			}
 		}
 	}
 	return findings;
@@ -331,17 +361,21 @@ export async function watchErrors(
 	);
 	const due = findings.filter((finding) => !recent.has(finding.key));
 	let sentAt: number | null = null;
-	if (due.length > 0) {
+	const first = due[0];
+	if (first) {
 		const subject =
-			due.length === 1 && due[0]
-				? due[0].key === "watch"
-					? "The error watch couldn't run"
-					: `Errors on ${due[0].key.slice(due[0].key.indexOf(":") + 1)}`
-				: `Errors on ${due.length} services`;
+			due.length === 1
+				? (first.subject ??
+					(first.key === "watch"
+						? "The error watch couldn't run"
+						: `Errors on ${first.key.slice(first.key.indexOf(":") + 1)}`))
+				: due.some((finding) => finding.subject)
+					? "Gateweave Status alerts"
+					: `Errors on ${due.length} services`;
 		const text = [
 			...due.map((finding) => finding.text),
 			"",
-			"Workers Logs in the Cloudflare dashboard has the details. The same service alerts again in six hours at the earliest.",
+			"Workers Logs in the Cloudflare dashboard has the details. The same type of alert for a service can repeat after six hours.",
 			"",
 			"--",
 			"Gateweave Status watches errors every 15 minutes.",

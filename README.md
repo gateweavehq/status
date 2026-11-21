@@ -23,8 +23,10 @@ page.
   once.
 - **The error watch** catches what a health check can't: a page or API that broke while the
   service still answers. Every 15 minutes it asks Cloudflare's GraphQL analytics how often each
-  watched host answered 5xx and each watched Worker and its Durable Objects had execution errors
-  or response stream disconnects, over the 15 minutes that ended two minutes before. It emails
+  watched host answered 5xx, each watched Worker had execution errors or response stream
+  disconnects, and its Durable Objects had execution errors, over the 15 minutes that ended two
+  minutes before. An object's stream disconnects aren't counted: its caller is one of our Workers,
+  and the Agents SDK's MCP servers make one for every request they answer. It emails
   when the count and share reach `minErrors` and `minShare`. Execution errors, stream disconnects,
   and a spike that crosses the threshold only in combination each have their own six-hour quiet
   time. It needs `ERROR_WATCH` and the secret `ANALYTICS_TOKEN`: a token with Account Analytics Read on the

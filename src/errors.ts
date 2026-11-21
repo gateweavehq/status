@@ -144,6 +144,14 @@ interface Invocations {
 const NOT_A_FAILURE = new Set(["success", "clientDisconnected"]);
 const STREAM_DISCONNECTED = "responseStreamDisconnected";
 
+/**
+ * A Durable Object's caller is always one of our Workers, and Cloudflare counts that Worker
+ * closing the stream it read the answer from as a disconnect of the object. The Agents SDK's MCP
+ * servers, such as Growth's, do it once for every request they answer. A Worker that fails while
+ * reading counts among its own invocations.
+ */
+const NOT_A_FAILURE_OF_AN_OBJECT = new Set([...NOT_A_FAILURE, STREAM_DISCONNECTED]);
+
 interface Answer {
 	data?: {
 		viewer?: {
@@ -251,11 +259,17 @@ export async function findErrors(
 
 	const account = viewer?.accounts?.[0];
 	const kinds = [
-		{ key: "worker", what: "The Worker", rows: account?.workersInvocationsAdaptive ?? [] },
+		{
+			key: "worker",
+			what: "The Worker",
+			rows: account?.workersInvocationsAdaptive ?? [],
+			ignored: NOT_A_FAILURE,
+		},
 		{
 			key: "objects",
 			what: "The Durable Objects of",
 			rows: account?.durableObjectsInvocationsAdaptiveGroups ?? [],
+			ignored: NOT_A_FAILURE_OF_AN_OBJECT,
 		},
 	];
 	for (const kind of kinds) {
@@ -266,7 +280,7 @@ export async function findErrors(
 				if (row.dimensions.scriptName !== script) continue;
 				total += row.sum.requests;
 				const status = row.dimensions.status;
-				if (row.sum.errors > 0 && !NOT_A_FAILURE.has(status)) {
+				if (row.sum.errors > 0 && !kind.ignored.has(status)) {
 					statuses.set(status, (statuses.get(status) ?? 0) + row.sum.errors);
 				}
 			}

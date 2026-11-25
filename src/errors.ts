@@ -1,3 +1,4 @@
+import { brandOf } from "./brand";
 import { ConfigError } from "./config";
 import { clock, HOUR, MINUTE } from "./time";
 
@@ -329,6 +330,7 @@ export interface WatchEnv {
 	DB: D1Database;
 	ERROR_WATCH?: unknown;
 	ANALYTICS_TOKEN?: string;
+	PAGE_NAME?: string;
 }
 
 export interface WatchReport {
@@ -353,6 +355,7 @@ export async function watchErrors(
 	if (!watch || !env.ANALYTICS_TOKEN || at % WINDOW_MS !== 0) {
 		return { ran: false, findings: [], alerted: [] };
 	}
+	const brand = brandOf(env);
 	const end = at - LAG_MS;
 	const start = end - WINDOW_MS;
 	let findings: Finding[];
@@ -384,7 +387,7 @@ export async function watchErrors(
 						? "The error watch couldn't run"
 						: `Errors on ${first.key.slice(first.key.indexOf(":") + 1)}`))
 				: due.some((finding) => finding.subject)
-					? "Gateweave Status alerts"
+					? `${brand.name} alerts`
 					: `Errors on ${due.length} services`;
 		const text = [
 			...due.map((finding) => finding.text),
@@ -392,7 +395,7 @@ export async function watchErrors(
 			"Workers Logs in the Cloudflare dashboard has the details. The same type of alert for a service can repeat after six hours.",
 			"",
 			"--",
-			"Gateweave Status watches errors every 15 minutes.",
+			`${brand.name} watches errors every 15 minutes.`,
 		].join("\n");
 		try {
 			await alert(subject, text);

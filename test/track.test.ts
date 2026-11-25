@@ -110,6 +110,7 @@ const SETTINGS = {
 	TRACK_TEAM: "WEB",
 	TRACK_LABELS: "Operations",
 	TRACK_KEY: KEY,
+	PAGE_URL: "https://status.test",
 };
 
 function monitorEnv(box?: ReturnType<typeof mailbox>, settings: object = SETTINGS): MonitorEnv {
@@ -195,7 +196,7 @@ describe("filing an incident in Track", () => {
 		expect(description).toContain("Kind: outage (down)");
 		expect(description).toContain("Started: 2026-11-12 14:01 UTC");
 		expect(description).toContain("What the check saw: Answered 503, not 200.");
-		expect(description).toContain("Status page: https://status.gateweave.com");
+		expect(description).toContain("Status page: https://status.test/");
 		const id = ((await rows("SELECT id FROM incident")) as { id: number }[])[0]?.id;
 		expect(description).toContain(`status-incident:${id}`);
 		// Nothing a person shouldn't read, and no address that isn't on the page.

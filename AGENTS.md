@@ -38,3 +38,14 @@ the type check and the tests. Run it before calling a change done.
 - TypeScript is strict, with `noUncheckedIndexedAccess`. Biome formats: tabs, 100 columns.
 - Dependencies are pinned to exact versions.
 - Commits follow Conventional Commits and carry no AI attribution.
+
+## Gateweave Cloud's deployment
+
+`wrangler.jsonc` here is the public template: placeholders only, no account, zone, database or
+route of ours. Gateweave Cloud's page (status.gateweave.com) is deployed from a private copy of
+this repository, `gateweave-status-deployment`, the way Track's is from `gateweave-track-deployment`.
+The copy updates itself from this repository's `main` and differs from it in `wrangler.jsonc`
+only: our account, route, D1 database id, sender, services, error watch, Track settings, and
+`PAGE_NAME`, `PAGE_DESCRIPTION`, `PAGE_URL` and `HOME_URL`. A change here that adds or renames a
+setting needs the same change in that copy before its next deploy. Deploy from the copy with
+`pnpm run deploy`, which applies migrations first. Never put those values in this repository.

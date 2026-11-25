@@ -5,7 +5,21 @@ Notable changes to Gateweave Status, newest first. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The checks' user agent is now `StatusMonitor/1`, with ` (+PAGE_URL)` when `PAGE_URL` is set; it
+  was `GateweaveStatus/1`. A WAF rule or allowlist that matches the old agent needs the new one.
+
 ### Added
+
+- **A named environment for Gateweave Cloud.** `wrangler.jsonc` keeps the self-hoster's template at
+  the top level and Gateweave Cloud's own deployment as the environment `cloud`
+  (`pnpm run deploy:cloud`). No account or zone id is in the file: the account is
+  `CLOUDFLARE_ACCOUNT_ID`, and the error watch may take its `account` and `zone` from the secrets
+  `ERROR_WATCH_ACCOUNT` and `ERROR_WATCH_ZONE`.
+  `pnpm run deploy:cloud` first runs a preflight that refuses to deploy unless the Worker has
+  both secrets (it reads the secrets' names only). Without them, an `ERROR_WATCH` that names no
+  ids makes every scheduled run fail, every minute; checks and alerts still run.
 
 - **Status page and API.** One Worker checks configured services every minute, keeps daily counts
   and incidents in D1, shows 90 days of history, and serves `/api/status`.

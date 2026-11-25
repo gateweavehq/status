@@ -1,4 +1,5 @@
 import type { Incident } from "./alerts";
+import { brandOf } from "./brand";
 import { ConfigError, type Service } from "./config";
 import { clock, dayOf, duration, MINUTE } from "./time";
 
@@ -8,7 +9,7 @@ import { clock, dayOf, duration, MINUTE } from "./time";
  */
 export interface TrackEnv {
 	DB: D1Database;
-	/** Track's address, such as https://track.gateweave.com. */
+	/** Track's address, such as https://track.example.com. */
 	TRACK_URL?: string;
 	/** The workspace's slug. */
 	TRACK_WORKSPACE?: string;
@@ -19,6 +20,7 @@ export interface TrackEnv {
 	/** An agent member's key (a secret). */
 	TRACK_KEY?: string;
 	PAGE_URL?: string;
+	PAGE_NAME?: string;
 }
 
 export interface TrackSettings {
@@ -103,16 +105,17 @@ export function markerOf(incident: Pick<Incident, "id">): string {
 export function descriptionOf(
 	incident: Incident,
 	service: Pick<Service, "name">,
-	pageUrl: string,
+	pageUrl: string | undefined,
+	product: string,
 ): string {
 	return [
 		`Service: ${service.name}`,
 		`Kind: ${incident.kind === "slow" ? "slow (it answered, but late)" : "outage (down)"}`,
 		`Started: ${dayOf(incident.started_at)} ${clock(incident.started_at)} UTC`,
 		`What the check saw: ${incident.error ?? "it failed"}`,
-		`Status page: ${pageUrl}`,
+		...(pageUrl ? [`Status page: ${pageUrl}`] : []),
 		"",
-		"Filed by Gateweave Status. It comments here when the incident ends and leaves the issue open: close it with the cause.",
+		`Filed by ${product}. It comments here when the incident ends and leaves the issue open: close it with the cause.`,
 		"",
 		markerOf(incident),
 	].join("\n");
@@ -268,7 +271,7 @@ export async function fileIncidents(
 		const settings = trackOf(env);
 		if (!settings) return report;
 		const db = env.DB;
-		const pageUrl = env.PAGE_URL ?? "https://status.gateweave.com";
+		const brand = brandOf(env);
 		// What is owed: an issue for an incident worth one (an outage, or a slow spell that lasted
 		// long enough), a comment for one that ended. ?1 is now and ?2 the slow spell's length.
 		const owed = `(track_issue IS NULL AND (kind = 'down' OR COALESCE(ended_at, ?1) - started_at >= ?2)
@@ -312,7 +315,7 @@ export async function fileIncidents(
 									workspace: settings.workspace,
 									team,
 									title,
-									description: descriptionOf(current, service, pageUrl),
+									description: descriptionOf(current, service, brand.pageUrl, brand.name),
 									priority: current.kind === "slow" ? "medium" : "high",
 									...(settings.labels.length > 0 && { labels: settings.labels }),
 								}),

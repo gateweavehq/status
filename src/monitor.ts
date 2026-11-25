@@ -1,4 +1,5 @@
 import { type AlertEnv, sendAlerts } from "./alerts";
+import { userAgentOf } from "./brand";
 import { type CheckResult, check, SLOW_MS } from "./check";
 import { servicesOf } from "./config";
 import { DAY, dayOf, HOUR, MINUTE } from "./time";
@@ -157,8 +158,11 @@ export async function tick(
 		};
 	}
 
+	const userAgent = userAgentOf(env);
 	const results = await Promise.all(
-		services.map((service) => check(service, send, retryAfter === undefined ? {} : { retryAfter })),
+		services.map((service) =>
+			check(service, send, { userAgent, ...(retryAfter === undefined ? {} : { retryAfter }) }),
+		),
 	);
 	const db = env.DB;
 	const [stateRows, recentRows, slowRows] = await db.batch<unknown>([

@@ -3,7 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { servicesOf } from "../src/config";
 import { type MonitorEnv, tick } from "../src/monitor";
-import { fileIncidents, SLOW_FILE_AFTER_MS, TRACK_RETRY_MS, trackOf } from "../src/track";
+import {
+	descriptionOf,
+	fileIncidents,
+	SLOW_FILE_AFTER_MS,
+	TRACK_RETRY_MS,
+	trackOf,
+} from "../src/track";
 
 const TRACK = "https://track.test/api/auth/ok";
 const TRACK_ENDPOINT = "https://track-issues.test/mcp";
@@ -52,7 +58,7 @@ function fakeTrack() {
 			const args = body.params.arguments;
 			let result: Record<string, unknown>;
 			if (body.params.name === "create_issue") {
-				const key = `WEB-${100 + fake.issues.length}`;
+				const key = `OPS-${1 + fake.issues.length}`;
 				fake.issues.push({
 					key,
 					title: String(args.title),
@@ -107,9 +113,10 @@ function mailbox() {
 const SETTINGS = {
 	TRACK_URL: "https://track-issues.test",
 	TRACK_WORKSPACE: "gateweave",
-	TRACK_TEAM: "WEB",
+	TRACK_TEAM: "OPS",
 	TRACK_LABELS: "Operations",
 	TRACK_KEY: KEY,
+	PAGE_URL: "https://status.test",
 };
 
 function monitorEnv(box?: ReturnType<typeof mailbox>, settings: object = SETTINGS): MonitorEnv {
@@ -185,7 +192,7 @@ describe("filing an incident in Track", () => {
 		expect(call?.signal).toBeInstanceOf(AbortSignal);
 		expect(call?.args).toMatchObject({
 			workspace: "gateweave",
-			team: "WEB",
+			team: "OPS",
 			title: "Incident: Track down since 2026-11-12 14:01 UTC",
 			priority: "high",
 			labels: ["Operations"],
@@ -195,7 +202,7 @@ describe("filing an incident in Track", () => {
 		expect(description).toContain("Kind: outage (down)");
 		expect(description).toContain("Started: 2026-11-12 14:01 UTC");
 		expect(description).toContain("What the check saw: Answered 503, not 200.");
-		expect(description).toContain("Status page: https://status.gateweave.com");
+		expect(description).toContain("Status page: https://status.test/");
 		const id = ((await rows("SELECT id FROM incident")) as { id: number }[])[0]?.id;
 		expect(description).toContain(`status-incident:${id}`);
 		// Nothing a person shouldn't read, and no address that isn't on the page.
@@ -207,7 +214,7 @@ describe("filing an incident in Track", () => {
 			),
 		).toEqual([
 			{
-				track_issue: "WEB-100",
+				track_issue: "OPS-1",
 				track_filed_at: T0 + 2 * MINUTE,
 				track_attempts: 0,
 				track_retry_at: null,
@@ -232,8 +239,8 @@ describe("filing an incident in Track", () => {
 		expect(track.issues).toHaveLength(2);
 		expect(track.named("search_issues")).toHaveLength(0);
 		expect(await rows("SELECT track_issue FROM incident ORDER BY id")).toEqual([
-			{ track_issue: "WEB-100" },
-			{ track_issue: "WEB-101" },
+			{ track_issue: "OPS-1" },
+			{ track_issue: "OPS-2" },
 		]);
 	});
 
@@ -297,7 +304,7 @@ describe("filing an incident in Track", () => {
 		expect(retry.track).toMatchObject({ filed: 1, failed: 0 });
 		expect(track.named("search_issues")).toHaveLength(1);
 		expect(track.issues).toHaveLength(1);
-		expect(await rows("SELECT track_issue FROM incident")).toEqual([{ track_issue: "WEB-100" }]);
+		expect(await rows("SELECT track_issue FROM incident")).toEqual([{ track_issue: "OPS-1" }]);
 	});
 
 	it("files in the service's own team when it names one, and looks there on a retry", async () => {
@@ -366,7 +373,7 @@ describe("filing an incident in Track", () => {
 		await run(T0 + 5 * MINUTE, track);
 		expect(track.comments).toEqual([
 			{
-				key: "WEB-100",
+				key: "OPS-1",
 				body: "Track is over: it ended at 2026-11-12 14:04 UTC, after down for 3 min.",
 			},
 		]);
@@ -389,7 +396,7 @@ describe("filing an incident in Track", () => {
 		await addIncident("down", T0 + 10 * MINUTE, T0 + 13 * MINUTE);
 		const late = await run(T0 + 14 * MINUTE, track);
 		expect(late.track).toMatchObject({ filed: 1, noted: 1 });
-		expect(track.comments.at(-1)?.key).toBe("WEB-101");
+		expect(track.comments.at(-1)?.key).toBe("OPS-2");
 	});
 
 	it("gives up after three days, once", async () => {
@@ -472,5 +479,27 @@ describe("filing an incident in Track", () => {
 		for (const table of ["incident", "check_result", "service_state", "error_alert", "daily"]) {
 			expect(JSON.stringify(await rows(`SELECT * FROM ${table}`))).not.toContain(KEY);
 		}
+	});
+});
+
+describe("the issue description", () => {
+	const incident = {
+		id: 7,
+		service: "track",
+		kind: "down" as const,
+		started_at: Date.UTC(2026, 10, 12, 14, 1) / 1000,
+		ended_at: null,
+		error: "Answered 503, not 200.",
+		alerted_at: null,
+		resolved_alerted_at: null,
+	};
+
+	it("has no status page line without a PAGE_URL", () => {
+		const text = descriptionOf(incident, { name: "Track" }, undefined, "Status");
+		expect(text).not.toContain("Status page:");
+		expect(text).toContain("status-incident:7");
+		expect(descriptionOf(incident, { name: "Track" }, "https://s.test/", "Status")).toContain(
+			"Status page: https://s.test/",
+		);
 	});
 });

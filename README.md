@@ -4,10 +4,14 @@
 
 <h1 align="center">Gateweave Status</h1>
 
-The status page of Gateweave Cloud, at [status.gateweave.com](https://status.gateweave.com). One
-Cloudflare Worker checks each service every minute, keeps the results in D1, opens and closes
-incidents, emails an alert when a service goes down or turns slow and when it recovers, and serves the
-page.
+A status page for the services your team runs, on your own Cloudflare account. One Worker checks
+each service you list every minute, keeps the results in D1, opens and closes incidents, emails
+an alert when a service goes down or turns slow and when it recovers, can file each incident as
+an issue in Track, and serves a public page with the last 90 days. There is no server and no
+database to look after. Add your services to `wrangler.jsonc` and deploy.
+
+See it live: [status.gateweave.com](https://status.gateweave.com), Gateweave Cloud's own page,
+which runs this code.
 
 - **A check** fetches a service's URL and expects a status (200 by default) within 10 seconds, and,
   where set, a piece of text in the body. A redirect counts as an answer, not something to follow.
@@ -16,7 +20,7 @@ page.
   that passes.
 - **A slow spell** is an incident of its own kind: a service that still answers, but took more
   than 3 seconds for five checks in a row. Three answers in time end it, and so does an outage,
-  which then does the telling. On 2026-11-12 Agents took 3 to 6 seconds a page for ten minutes
+  which then does the telling. On 2026-11-12 one of Gateweave's services took 3 to 6 seconds a page for ten minutes
   while every check passed; this is for that.
 - **Alerts** go by email through Email Service's binding to `ALERT_TO`. One that couldn't go is
   tried again each minute for three days, and an outage that ended before its alert went is told
@@ -32,7 +36,7 @@ page.
   time. It needs `ERROR_WATCH` and the secret `ANALYTICS_TOKEN`: a token with Account Analytics Read on the
   account and Analytics Read on the zone. If the analytics can't be read, that is emailed too.
 - **Track issues** are the record of an incident. When one opens, the Worker files an issue in
-  Gateweave's own Track workspace, and when it ends it adds one comment with the end time and the
+  your Track workspace, and when it ends it adds one comment with the end time and the
   length. It never changes the issue's status: a person closes it with the cause. An outage is
   filed at once, a slow spell once it has lasted 15 minutes (priority `high` and `medium`). The
   incident keeps the issue's key, so it is filed once; the description carries
@@ -56,30 +60,29 @@ both that the page is down and that the checks behind it stopped.
 
 Requirements: Node.js 24 and pnpm 12.
 
-| Command           | Purpose                                        |
-| ----------------- | ---------------------------------------------- |
-| `pnpm install`    | Install dependencies                           |
-| `pnpm verify`     | Lint, type-check and test, as CI does          |
-| `pnpm dev`        | Run it locally; `--test-scheduled` runs checks |
-| `pnpm run deploy` | Deploy (`wrangler.jsonc` holds the services)   |
+| Command                 | Purpose                                                              |
+| ----------------------- | -------------------------------------------------------------------- |
+| `pnpm install`          | Install dependencies                                                 |
+| `pnpm verify`           | Lint, type-check and test, as CI does                                |
+| `pnpm dev`              | Run it locally; `--test-scheduled` runs checks                       |
+| `pnpm run deploy`       | Apply migrations, then deploy                                        |
+| `pnpm run deploy:cloud` | Gateweave Cloud's `cloud` environment: apply migrations, then deploy |
 
 See [architecture](docs/architecture.md) for how checks and incidents work, and
 [self-hosting](docs/self-hosting.md) for running your own copy.
 
-To deploy your own: create the database (`npx wrangler d1 create gateweave-status`), put its id in
-`wrangler.jsonc` with your own `SERVICES`, route and sender, then:
-
-```sh
-npx wrangler d1 migrations apply gateweave-status --remote
-npx wrangler deploy
-npx wrangler secret put ALERT_TO
-```
+To deploy your own, follow [self-hosting](docs/self-hosting.md): create the database, replace
+the placeholders in `wrangler.jsonc` with your services, route and sender, then `pnpm run deploy`,
+which applies the migrations and deploys. The top level of `wrangler.jsonc` is that template. Gateweave
+Cloud's own page (status.gateweave.com) is the environment `cloud` of the same file, deployed with
+`pnpm run deploy:cloud`; the account comes from `CLOUDFLARE_ACCOUNT_ID`, and the file names no account
+or zone.
 
 Filing incidents in Track is off until these are set, and nothing else changes without them:
 
 | Setting           | Kind   | What                                                                       |
 | ----------------- | ------ | -------------------------------------------------------------------------- |
-| `TRACK_URL`       | var    | Track's address, such as `https://track.gateweave.com`                     |
+| `TRACK_URL`       | var    | Track's address, such as `https://track.example.com`                       |
 | `TRACK_WORKSPACE` | var    | The workspace's slug                                                       |
 | `TRACK_TEAM`      | var    | The team the issues go to, such as `WEB`, unless a service names a `team`  |
 | `TRACK_LABELS`    | var    | Label names, comma-separated, such as `Operations`; they must exist        |
@@ -97,9 +100,6 @@ wrong, nothing is filed and each run logs `misconfigured`. A label that doesn't 
 refuse the issue, which is retried until it is given up. The Worker talks to Track's `/mcp` with
 plain JSON-RPC (`tools/call` for `create_issue`, `search_issues` and `add_comment`) and never logs
 the key or what Track answered.
-
-When deploying a version with this, apply the migration before the Worker (the commands above do),
-as the cron reads its columns.
 
 The sender's domain must be set up for Email Sending. A service on a Custom Domain in the same
 zone can be checked; one on a route can't be fetched from a Worker on that zone.

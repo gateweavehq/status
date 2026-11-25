@@ -13,7 +13,7 @@ export interface CheckResult {
 
 export const TIMEOUT_MS = 10_000;
 /**
- * An answer slower than this is slow. Gateweave's services answer their checks in well under a
+ * An answer slower than this is slow. Typical services answer their checks in well under a
  * second; three seconds is what a person notices waiting for a page.
  */
 export const SLOW_MS = 3_000;
@@ -22,13 +22,14 @@ export const RETRY_AFTER_MS = 2_000;
 /** Bodies are read this far for `contains`; health answers are short. */
 const BODY_LIMIT = 64 * 1024;
 
-const USER_AGENT = "GateweaveStatus/1 (+https://status.gateweave.com)";
+const USER_AGENT = "StatusMonitor/1";
 
 /** Checks a service once. */
 export async function checkOnce(
 	service: Service,
 	send: typeof fetch = fetch,
 	timeout = TIMEOUT_MS,
+	userAgent = USER_AGENT,
 ): Promise<CheckResult> {
 	const started = Date.now();
 	const result = (ok: boolean, status: number | null, error: string | null): CheckResult => ({
@@ -43,7 +44,7 @@ export async function checkOnce(
 		response = await send(service.url, {
 			// A redirect is an answer of its own: following it would check another page.
 			redirect: "manual",
-			headers: { "user-agent": USER_AGENT },
+			headers: { "user-agent": userAgent },
 			signal: AbortSignal.timeout(timeout),
 		});
 	} catch (error) {
@@ -74,12 +75,12 @@ export async function checkOnce(
 export async function check(
 	service: Service,
 	send: typeof fetch = fetch,
-	{ timeout = TIMEOUT_MS, retryAfter = RETRY_AFTER_MS } = {},
+	{ timeout = TIMEOUT_MS, retryAfter = RETRY_AFTER_MS, userAgent = USER_AGENT } = {},
 ): Promise<CheckResult> {
-	const first = await checkOnce(service, send, timeout);
+	const first = await checkOnce(service, send, timeout, userAgent);
 	if (first.ok) return first;
 	await new Promise((done) => setTimeout(done, retryAfter));
-	return checkOnce(service, send, timeout);
+	return checkOnce(service, send, timeout, userAgent);
 }
 
 async function readUpTo(response: Response, limit: number): Promise<string> {

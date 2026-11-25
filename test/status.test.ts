@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../src";
 import { messageFor } from "../src/alerts";
+import { brandOf, userAgentOf } from "../src/brand";
 import { checkOnce, check as checkService } from "../src/check";
 import { ConfigError, type Service, servicesOf } from "../src/config";
 import { errorWatchOf, LAG_MS, QUIET_MS, WINDOW_MS, watchErrors } from "../src/errors";
@@ -456,6 +457,16 @@ describe("the error watch", () => {
 			minShare: 0.05,
 		});
 		const good = { account, zone: account, hosts: ["a.test"] };
+		// The ids may come from secrets instead, and the setting's own win.
+		const other = "1".repeat(32);
+		const bare = JSON.stringify({ hosts: ["a.test"] });
+		expect(errorWatchOf(bare, { account, zone: other })).toMatchObject({ account, zone: other });
+		expect(errorWatchOf(JSON.stringify(good), { account: other, zone: other })).toMatchObject({
+			account,
+			zone: account,
+		});
+		expect(() => errorWatchOf(bare)).toThrow("account is the account's id");
+		expect(() => errorWatchOf(bare, { account })).toThrow("zone is the zone's id");
 		const wrong: [unknown, string][] = [
 			["{", "ERROR_WATCH is an object, as JSON."],
 			[[], "ERROR_WATCH is an object."],
@@ -678,7 +689,7 @@ describe("the error watch", () => {
 			"worker-errors:track-worker",
 			"worker-streams:track-worker",
 		]);
-		expect(sent[1]?.subject).toBe("Gateweave Status alerts");
+		expect(sent[1]?.subject).toBe("Status alerts");
 		expect(sent[1]?.text).toContain("failed 10 of 100 invocations");
 		expect(sent[1]?.text).toContain("10 response stream disconnects in 100 invocations");
 	});
@@ -880,5 +891,65 @@ describe("words", () => {
 				"https://s.test",
 			).subject,
 		).toBe("Track was slow for 7 min");
+	});
+});
+
+describe("branding", () => {
+	const incident = {
+		id: 1,
+		service: "track",
+		kind: "down" as const,
+		started_at: T0,
+		ended_at: null,
+		error: "Answered 503, not 200.",
+		alerted_at: null,
+		resolved_alerted_at: null,
+	};
+
+	it("has neutral defaults that name no one", () => {
+		const brand = brandOf({});
+		expect(brand).toMatchObject({ name: "Status", pageUrl: undefined, homeUrl: undefined });
+		expect(userAgentOf({})).toBe("StatusMonitor/1");
+		const { text } = messageFor(incident, { name: "Track", url: TRACK }, undefined);
+		expect(text).not.toContain("Gateweave");
+		expect(text).not.toContain("Status:");
+		expect(text.endsWith("Status checks every minute.")).toBe(true);
+	});
+
+	it("drops a PAGE_URL or HOME_URL that is not http(s)", async () => {
+		const settings = { PAGE_URL: "javascript:alert(1)", HOME_URL: "ftp://acme.test/" };
+		expect(brandOf(settings)).toMatchObject({ pageUrl: undefined, homeUrl: undefined });
+		expect(brandOf({ PAGE_URL: "not a url" }).pageUrl).toBeUndefined();
+		expect(userAgentOf(settings)).toBe("StatusMonitor/1");
+		const html = await (
+			await worker.fetch(new Request("https://status.test/"), { ...env, ...settings })
+		).text();
+		expect(html).not.toContain("javascript:");
+		expect(html).not.toContain("ftp://");
+	});
+
+	it("takes the name, address and links from settings", async () => {
+		const settings = {
+			PAGE_NAME: "Acme Status",
+			PAGE_DESCRIPTION: "Is Acme up?",
+			PAGE_URL: "https://status.acme.test",
+			HOME_URL: "https://acme.test",
+		};
+		expect(userAgentOf(settings)).toBe("StatusMonitor/1 (+https://status.acme.test/)");
+		const { text } = messageFor(
+			incident,
+			{ name: "Track", url: TRACK },
+			"https://status.acme.test/",
+			"Acme Status",
+		);
+		expect(text).toContain("Status: https://status.acme.test/");
+		expect(text.endsWith("Acme Status checks every minute.")).toBe(true);
+		const html = await (
+			await worker.fetch(new Request("https://status.test/"), { ...env, ...settings })
+		).text();
+		expect(html).toContain("<title>Acme Status</title>");
+		expect(html).toContain('content="Is Acme up?"');
+		expect(html).toContain('href="https://acme.test/"');
+		expect(html).not.toContain("Gateweave");
 	});
 });

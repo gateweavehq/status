@@ -9,8 +9,8 @@ The Cron Trigger in `wrangler.jsonc` runs every minute (`* * * * *`). The schedu
 `src/index.ts` starts the service checks and the error watch side by side. A failed error watch
 does not stop checks, or the other way around.
 
-`SERVICES` in `wrangler.jsonc` lists Website, ID, Track, Agents, Guard, Mail and Track demo, in the
-order the page shows them. Each entry has an HTTPS URL and may name an expected status, text that
+`SERVICES` in `wrangler.jsonc` lists the services in the order the page shows them. Gateweave
+Cloud's, in `env.cloud`, are Website, ID, Track, Agents, Guard, Mail, Growth and Track demo. Each entry has an HTTPS URL and may name an expected status, text that
 must occur in its answer, and a Track team. `src/config.ts` checks the entries before use.
 
 `src/check.ts` fetches each URL with a 10-second limit. It expects 200 unless the service says
@@ -34,8 +34,9 @@ It records when each email went so one is sent once. Failed sends are retried on
 up to three days. The page still shows incidents without email settings.
 
 With Track settings, `src/track.ts` files an outage at once and a slow incident after 15 minutes.
-The current configuration files into the `gateweave` workspace. A service's `team` sets its team:
-ID, TRK, AGT, GRD or MAIL; Website uses the default `WEB`. Track demo uses TRK. The issue carries
+Gateweave Cloud's configuration (`env.cloud`) files into the `gateweave` workspace. A service's
+`team` sets its team: ID, TRK, AGT, GRD, MAIL or MMO; Website uses the default `WEB`. Track demo
+uses TRK. The template's top level sets no Track workspace, so nothing is filed. The issue carries
 an incident marker and stays open when the incident ends. Status adds one end comment; a person
 closes the issue with the cause. Filing runs after email and catches its own failures. It retries
 with a growing wait for up to three days and stores its progress on the incident row.

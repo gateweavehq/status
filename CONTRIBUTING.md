@@ -23,3 +23,12 @@ edit a migration already merged. Use Conventional Commits without AI attribution
 
 A pull request is reviewed against the project rules and the passing CI check before it is merged.
 Keep it focused so the behavior and any deploy steps can be checked.
+
+## Contributor License Agreement
+
+Gateweave Status is open source under the AGPL-3.0. The maintainer also offers it under other
+terms, such as a hosted service and commercial licenses. So that every contribution can be part of
+both, contributors sign the [CLA](CLA.md) once, and it covers every Gateweave project. You keep the
+copyright to your work.
+
+A bot asks you to sign on your first pull request. To sign, reply with the sentence it gives you.

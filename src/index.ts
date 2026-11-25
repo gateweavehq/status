@@ -1,4 +1,5 @@
 import { sendMail } from "./alerts";
+import { brandOf } from "./brand";
 import { watchErrors } from "./errors";
 import { tick } from "./monitor";
 import { FAVICON, renderPage } from "./page";
@@ -21,7 +22,7 @@ export default {
 		switch (url.pathname) {
 			case "/": {
 				const data = await statusData(env, Date.now());
-				return new Response(renderPage(data), {
+				return new Response(renderPage(data, brandOf(env)), {
 					headers: {
 						...PAGE_HEADERS,
 						"content-type": "text/html; charset=utf-8",

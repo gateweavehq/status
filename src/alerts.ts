@@ -1,3 +1,4 @@
+import { brandOf, DEFAULT_NAME } from "./brand";
 import { SLOW_MS } from "./check";
 import type { Service } from "./config";
 import { ConfigError } from "./config";
@@ -10,6 +11,7 @@ export interface AlertEnv {
 	ALERT_TO?: string;
 	EMAIL?: SendEmail;
 	PAGE_URL?: string;
+	PAGE_NAME?: string;
 }
 
 /** An incident as the database keeps it: an outage, or a spell of slow answers. */
@@ -70,11 +72,17 @@ export interface AlertMessage {
 export function messageFor(
 	incident: Incident,
 	service: Pick<Service, "name" | "url">,
-	pageUrl: string,
+	pageUrl: string | undefined,
+	product: string = DEFAULT_NAME,
 ): AlertMessage {
 	const { name } = service;
 	const started = `${clock(incident.started_at)} UTC on ${when(incident.started_at)}`;
-	const footer = ["", `Status: ${pageUrl}`, "", "--", "Gateweave Status checks every minute."];
+	const footer = [
+		"",
+		...(pageUrl ? [`Status: ${pageUrl}`, ""] : []),
+		"--",
+		`${product} checks every minute.`,
+	];
 	if (incident.kind === "slow") return slowMessage(incident, service, started, footer);
 	if (incident.ended_at === null) {
 		return {
@@ -163,7 +171,7 @@ export async function sendAlerts(
 	)
 		.bind(at - ALERT_RETRY_MS)
 		.all<Incident>();
-	const pageUrl = env.PAGE_URL ?? "https://status.gateweave.com";
+	const brand = brandOf(env);
 	let sent = 0;
 	let failed = 0;
 	for (const incident of due.results) {
@@ -171,7 +179,7 @@ export async function sendAlerts(
 			name: incident.service,
 			url: "",
 		};
-		const { subject, text } = messageFor(incident, service, pageUrl);
+		const { subject, text } = messageFor(incident, service, brand.pageUrl, brand.name);
 		try {
 			await env.EMAIL.send({ from: mail.from, to: mail.to, subject, text });
 		} catch {

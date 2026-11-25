@@ -68,12 +68,12 @@ Plain settings go in `vars` in `wrangler.jsonc`. Only `SERVICES` is required.
 Set each with `npx wrangler secret put NAME`. For local runs keep them in `.dev.vars`, which Git
 ignores. There is no example file.
 
-| Secret                                    | Purpose                                                                                                                        |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `ALERT_TO`                                | One address or a comma-separated list for incident and error-watch email. Without it, incidents show only on the page.         |
-| `ANALYTICS_TOKEN`                         | Reads Cloudflare analytics for `ERROR_WATCH`: Account Analytics Read on its account, Analytics Read on its zone.               |
-| `ERROR_WATCH_ACCOUNT`, `ERROR_WATCH_ZONE` | Optional. The account's and the zone's ids for `ERROR_WATCH`, when it leaves `account` and `zone` out.                         |
-| `TRACK_KEY`                               | An agent member's key (made in the workspace's settings, under Agents), for filing issues. Needs all four `TRACK_*` variables. |
+| Secret                                    | Purpose                                                                                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ALERT_TO`                                | One address or a comma-separated list for incident and error-watch email. Without it, incidents show only on the page.                                       |
+| `ANALYTICS_TOKEN`                         | Reads Cloudflare analytics for `ERROR_WATCH`: Account Analytics Read on its account, Analytics Read on its zone.                                             |
+| `ERROR_WATCH_ACCOUNT`, `ERROR_WATCH_ZONE` | The account's and the zone's ids for `ERROR_WATCH`, needed when it leaves `account` and `zone` out (then the scheduled run fails every minute without them). |
+| `TRACK_KEY`                               | An agent member's key (made in the workspace's settings, under Agents), for filing issues. Needs all four `TRACK_*` variables.                               |
 
 ## Watching your services
 
@@ -108,6 +108,12 @@ reach the thresholds:
 and `ERROR_WATCH_ZONE` instead, so that a file you publish names neither. Gateweave Cloud does this.
 Leave `ERROR_WATCH` out to turn the watch off.
 
+If `ERROR_WATCH` is set and the ids are in neither the setting nor the two secrets, the setting is
+invalid, and the Worker reads it on every run, before it looks at the quarter hour. So the scheduled
+run then fails **every minute**, not every 15 minutes, and the error watch does not run. The service
+checks, incidents and alerts of that minute still run, because the two parts run side by side and
+one failing does not stop the other.
+
 ## Incidents in Track
 
 Set `TRACK_URL`, `TRACK_WORKSPACE`, `TRACK_TEAM` and the secret `TRACK_KEY` and each incident is
@@ -130,10 +136,14 @@ Cloud does below, and add scripts like `deploy:cloud` for it.
 
 status.gateweave.com is the environment `cloud` of `wrangler.jsonc`, in the same file and the same
 repository as the template, the way Gateweave's other products keep theirs. Wrangler does not carry
-bindings and variables into an environment, so `cloud` repeats the ones the Worker needs: its name
-(`gateweave-status`), the Custom Domain `status.gateweave.com`, the D1 database `gateweave-status`
-with its id, the cron trigger, the `EMAIL` binding, and every variable, with the page's name,
-description, address and home link. A database's id names a resource and grants nothing. The file
+bindings and variables into an environment, so `cloud` repeats the ones the Worker needs: the D1
+database `gateweave-status` with its id, the `EMAIL` binding, and every variable, with the page's
+name, description, address and home link. Wrangler does inherit some settings, and `cloud` states
+two of them on purpose: its `name` (`gateweave-status`, the live Worker's; without it the name
+becomes `status-cloud`, a second Worker) and its `routes` (the Custom Domain
+`status.gateweave.com`; without it the template's `status.example.com` is inherited). It also
+states the cron trigger, `workers_dev` and `observability`, which would be inherited with the same
+values. A database's id names a resource and grants nothing. The file
 names no Cloudflare account and no zone: the account is `CLOUDFLARE_ACCOUNT_ID` in the environment,
 and Cloudflare finds the zone from the Custom Domain. The error watch's account and zone ids are
 the secrets `ERROR_WATCH_ACCOUNT` and `ERROR_WATCH_ZONE`.
@@ -146,12 +156,15 @@ pnpm run deploy:cloud
 ```
 
 with Wrangler logged in to that account (or `CLOUDFLARE_API_TOKEN` set). `pnpm run deploy:cloud` runs
-`pnpm run db:migrate:cloud` (`wrangler d1 migrations apply DB --remote --env cloud`) and then
-`wrangler deploy --env cloud`, so the cron never meets an older schema. It updates the live Worker
-`gateweave-status` in place. Never run plain `pnpm run deploy` for it: that deploys the template.
+`pnpm run check:cloud-secrets`, `pnpm run db:migrate:cloud` (`wrangler d1 migrations apply DB
+--remote --env cloud`) and then `wrangler deploy --env cloud`, so the cron never meets an older
+schema. It updates the live Worker `gateweave-status` in place. Never run plain `pnpm run deploy` for it: that deploys the template.
 
-Before the first deploy of this version, set the two secrets, or the error watch stops: its
-`ERROR_WATCH` no longer carries the ids.
+`pnpm run check:cloud-secrets` runs first and refuses to go on, changing nothing, unless the Worker
+has both secrets. It reads only the secrets' names (`wrangler secret list --env cloud`), never a
+value. Without them the scheduled run would fail every minute, because `ERROR_WATCH` no longer
+carries the ids; the checks and alerts would still run. Set them once, before the first deploy of
+this version:
 
 ```sh
 npx wrangler secret put ERROR_WATCH_ACCOUNT --env cloud

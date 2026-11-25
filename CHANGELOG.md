@@ -17,6 +17,9 @@ Notable changes to Gateweave Status, newest first. The format follows
   (`pnpm run deploy:cloud`). No account or zone id is in the file: the account is
   `CLOUDFLARE_ACCOUNT_ID`, and the error watch may take its `account` and `zone` from the secrets
   `ERROR_WATCH_ACCOUNT` and `ERROR_WATCH_ZONE`.
+  `pnpm run deploy:cloud` first runs a preflight that refuses to deploy unless the Worker has
+  both secrets (it reads the secrets' names only). Without them, an `ERROR_WATCH` that names no
+  ids makes every scheduled run fail, every minute; checks and alerts still run.
 
 - **Status page and API.** One Worker checks configured services every minute, keeps daily counts
   and incidents in D1, shows 90 days of history, and serves `/api/status`.

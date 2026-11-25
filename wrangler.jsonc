@@ -6,8 +6,8 @@
 	"name": "status",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-11-01",
-	// Wrangler uses the account you are logged in to, or CLOUDFLARE_ACCOUNT_ID. Add "account_id"
-	// here only to pin it.
+	// Wrangler uses the account you are logged in to, or CLOUDFLARE_ACCOUNT_ID. In your own copy
+	// you may add "account_id" to pin it; this public file never names an account.
 	"workers_dev": false,
 	// The page's address. REPLACE with a hostname on a zone in your account. A Worker on a Custom
 	// Domain of the same zone as a checked service can fetch it; one on a route can't.
@@ -78,7 +78,11 @@
 	// id of a resource, which grants nothing), and nothing that names the account or a zone. The
 	// account is CLOUDFLARE_ACCOUNT_ID in the environment; Cloudflare finds the zone from the custom
 	// domain. The error watch's two ids are the secrets ERROR_WATCH_ACCOUNT and ERROR_WATCH_ZONE.
-	// Wrangler does not inherit bindings and settings into an environment, so it repeats all of them.
+	// Wrangler inherits "routes", "triggers", "observability" and "workers_dev" into an environment,
+	// and derives its name as "<name>-cloud" ("status-cloud", a second Worker), so `cloud` states its
+	// own "name" and "routes" and repeats the other settings. It does not inherit vars and bindings
+	// (D1, send_email), so it repeats those too.
+	// `pnpm run deploy:cloud` refuses to deploy unless the live Worker has both error watch secrets.
 	"env": {
 		"cloud": {
 			"name": "gateweave-status",

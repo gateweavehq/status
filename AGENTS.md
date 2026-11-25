@@ -43,9 +43,9 @@ the type check and the tests. Run it before calling a change done.
 
 `wrangler.jsonc` here is the public template: placeholders only, no account, zone, database or
 route of ours. Gateweave Cloud's page (status.gateweave.com) is deployed from a private copy of
-this repository, `gateweave-status-deployment`, the way Track's is from `gateweave-track-deployment`.
-The copy updates itself from this repository's `main` and differs from it in `wrangler.jsonc`
-only: our account, route, D1 database id, sender, services, error watch, Track settings, and
-`PAGE_NAME`, `PAGE_DESCRIPTION`, `PAGE_URL` and `HOME_URL`. A change here that adds or renames a
-setting needs the same change in that copy before its next deploy. Deploy from the copy with
-`pnpm run deploy`, which applies migrations first. Never put those values in this repository.
+this repository, `gateweave-status-deployment`. The copy is this repository's `main`, merged in by
+hand, and it keeps its own `wrangler.jsonc`: our account, route, D1 database id, sender, services,
+error watch, Track settings, and `PAGE_NAME`, `PAGE_DESCRIPTION`, `PAGE_URL` and `HOME_URL`. Nothing
+syncs it automatically. A change here that adds or renames a setting needs the same change in that
+copy's `wrangler.jsonc` before its next deploy. The deploy steps for status.gateweave.com live in
+the copy's own README. Never put those values in this repository.

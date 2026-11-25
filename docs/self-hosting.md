@@ -109,6 +109,10 @@ describes how.
 
 ## Keeping a copy up to date
 
+The checks send the user agent `StatusMonitor/1`, with ` (+PAGE_URL)` when `PAGE_URL` is set (older
+versions sent `GateweaveStatus/1`). If a firewall rule or allowlist of a checked service matches the
+user agent, update it when you take this change.
+
 Pull this repository's changes and run `pnpm run deploy` again; migrations are append-only, so
 an update never rewrites yours. A copy that keeps its real values in `wrangler.jsonc` will see
 conflicts on that file: keep your values and take the new settings from the template.

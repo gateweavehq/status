@@ -5,6 +5,11 @@ Notable changes to Gateweave Status, newest first. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The checks' user agent is now `StatusMonitor/1`, with ` (+PAGE_URL)` when `PAGE_URL` is set; it
+  was `GateweaveStatus/1`. A WAF rule or allowlist that matches the old agent needs the new one.
+
 ### Added
 
 - **Status page and API.** One Worker checks configured services every minute, keeps daily counts

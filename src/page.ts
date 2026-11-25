@@ -168,8 +168,6 @@ a { color: inherit; }
 header { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; text-decoration: none; }
 .brand svg { width: 26px; height: 26px; }
-.title { color: var(--muted-foreground); }
-.title::before { content: "/"; margin-right: 10px; opacity: 0.5; }
 h1, h2 { margin: 0; }
 .banner {
 	display: flex; align-items: center; gap: 14px;

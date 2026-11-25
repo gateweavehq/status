@@ -906,6 +906,18 @@ describe("branding", () => {
 		expect(text.endsWith("Status checks every minute.")).toBe(true);
 	});
 
+	it("drops a PAGE_URL or HOME_URL that is not http(s)", async () => {
+		const settings = { PAGE_URL: "javascript:alert(1)", HOME_URL: "ftp://acme.test/" };
+		expect(brandOf(settings)).toMatchObject({ pageUrl: undefined, homeUrl: undefined });
+		expect(brandOf({ PAGE_URL: "not a url" }).pageUrl).toBeUndefined();
+		expect(userAgentOf(settings)).toBe("StatusMonitor/1");
+		const html = await (
+			await worker.fetch(new Request("https://status.test/"), { ...env, ...settings })
+		).text();
+		expect(html).not.toContain("javascript:");
+		expect(html).not.toContain("ftp://");
+	});
+
 	it("takes the name, address and links from settings", async () => {
 		const settings = {
 			PAGE_NAME: "Acme Status",

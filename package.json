@@ -15,7 +15,9 @@
 		"format": "biome check --write",
 		"verify": "pnpm check && pnpm typecheck && pnpm test",
 		"dev": "wrangler dev",
-		"deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+		"deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+		"db:migrate:cloud": "wrangler d1 migrations apply DB --remote --env cloud",
+		"deploy:cloud": "pnpm run db:migrate:cloud && wrangler deploy --env cloud"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.6.5",

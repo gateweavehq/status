@@ -1,8 +1,12 @@
 # Self-hosting
 
-Gateweave Status runs as one Cloudflare Worker with a D1 database. `wrangler.jsonc` is a template:
-every value that belongs to you is a placeholder or a commented example. Gateweave Cloud's own
-page is deployed from a private copy that fills them in with its own values.
+Gateweave Status runs as one Cloudflare Worker with a D1 database. The top level of
+`wrangler.jsonc` is a template: every value that belongs to you is a placeholder or a commented
+example, and it is what `pnpm run deploy` deploys. Gateweave Cloud's own page is the named
+environment `cloud` in the same file, and `pnpm run deploy:cloud` deploys that one (see
+[Gateweave Cloud's own deployment](#gateweave-clouds-own-deployment)). The file names no Cloudflare
+account and no zone. Your account is the one you are logged in to, or `CLOUDFLARE_ACCOUNT_ID` in the
+environment.
 
 ## What you need
 
@@ -64,11 +68,12 @@ Plain settings go in `vars` in `wrangler.jsonc`. Only `SERVICES` is required.
 Set each with `npx wrangler secret put NAME`. For local runs keep them in `.dev.vars`, which Git
 ignores. There is no example file.
 
-| Secret            | Purpose                                                                                                                        |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `ALERT_TO`        | One address or a comma-separated list for incident and error-watch email. Without it, incidents show only on the page.         |
-| `ANALYTICS_TOKEN` | Reads Cloudflare analytics for `ERROR_WATCH`: Account Analytics Read on its account, Analytics Read on its zone.               |
-| `TRACK_KEY`       | An agent member's key (made in the workspace's settings, under Agents), for filing issues. Needs all four `TRACK_*` variables. |
+| Secret                                    | Purpose                                                                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `ALERT_TO`                                | One address or a comma-separated list for incident and error-watch email. Without it, incidents show only on the page.         |
+| `ANALYTICS_TOKEN`                         | Reads Cloudflare analytics for `ERROR_WATCH`: Account Analytics Read on its account, Analytics Read on its zone.               |
+| `ERROR_WATCH_ACCOUNT`, `ERROR_WATCH_ZONE` | Optional. The account's and the zone's ids for `ERROR_WATCH`, when it leaves `account` and `zone` out.                         |
+| `TRACK_KEY`                               | An agent member's key (made in the workspace's settings, under Agents), for filing issues. Needs all four `TRACK_*` variables. |
 
 ## Watching your services
 
@@ -99,7 +104,9 @@ reach the thresholds:
 }
 ```
 
-Leave it out to turn the watch off.
+`account` and `zone` may be left out of the setting and set as the secrets `ERROR_WATCH_ACCOUNT`
+and `ERROR_WATCH_ZONE` instead, so that a file you publish names neither. Gateweave Cloud does this.
+Leave `ERROR_WATCH` out to turn the watch off.
 
 ## Incidents in Track
 
@@ -115,4 +122,38 @@ user agent, update it when you take this change.
 
 Pull this repository's changes and run `pnpm run deploy` again; migrations are append-only, so
 an update never rewrites yours. A copy that keeps its real values in `wrangler.jsonc` will see
-conflicts on that file: keep your values and take the new settings from the template.
+conflicts on that file: keep your values and take the new settings from the template. To keep your
+values apart from the template, put them in a named environment of the same file, as Gateweave
+Cloud does below, and add scripts like `deploy:cloud` for it.
+
+## Gateweave Cloud's own deployment
+
+status.gateweave.com is the environment `cloud` of `wrangler.jsonc`, in the same file and the same
+repository as the template, the way Gateweave's other products keep theirs. Wrangler does not carry
+bindings and variables into an environment, so `cloud` repeats the ones the Worker needs: its name
+(`gateweave-status`), the Custom Domain `status.gateweave.com`, the D1 database `gateweave-status`
+with its id, the cron trigger, the `EMAIL` binding, and every variable, with the page's name,
+description, address and home link. A database's id names a resource and grants nothing. The file
+names no Cloudflare account and no zone: the account is `CLOUDFLARE_ACCOUNT_ID` in the environment,
+and Cloudflare finds the zone from the Custom Domain. The error watch's account and zone ids are
+the secrets `ERROR_WATCH_ACCOUNT` and `ERROR_WATCH_ZONE`.
+
+The next deploy of status.gateweave.com, and every one after it, is:
+
+```sh
+export CLOUDFLARE_ACCOUNT_ID=<Gateweave's account id>   # PowerShell: $env:CLOUDFLARE_ACCOUNT_ID = "..."
+pnpm run deploy:cloud
+```
+
+with Wrangler logged in to that account (or `CLOUDFLARE_API_TOKEN` set). `pnpm run deploy:cloud` runs
+`pnpm run db:migrate:cloud` (`wrangler d1 migrations apply DB --remote --env cloud`) and then
+`wrangler deploy --env cloud`, so the cron never meets an older schema. It updates the live Worker
+`gateweave-status` in place. Never run plain `pnpm run deploy` for it: that deploys the template.
+
+Before the first deploy of this version, set the two secrets, or the error watch stops: its
+`ERROR_WATCH` no longer carries the ids.
+
+```sh
+npx wrangler secret put ERROR_WATCH_ACCOUNT --env cloud
+npx wrangler secret put ERROR_WATCH_ZONE --env cloud
+```

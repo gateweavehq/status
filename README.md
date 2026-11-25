@@ -60,19 +60,23 @@ both that the page is down and that the checks behind it stopped.
 
 Requirements: Node.js 24 and pnpm 12.
 
-| Command           | Purpose                                        |
-| ----------------- | ---------------------------------------------- |
-| `pnpm install`    | Install dependencies                           |
-| `pnpm verify`     | Lint, type-check and test, as CI does          |
-| `pnpm dev`        | Run it locally; `--test-scheduled` runs checks |
-| `pnpm run deploy` | Apply migrations, then deploy                  |
+| Command                 | Purpose                                                              |
+| ----------------------- | -------------------------------------------------------------------- |
+| `pnpm install`          | Install dependencies                                                 |
+| `pnpm verify`           | Lint, type-check and test, as CI does                                |
+| `pnpm dev`              | Run it locally; `--test-scheduled` runs checks                       |
+| `pnpm run deploy`       | Apply migrations, then deploy                                        |
+| `pnpm run deploy:cloud` | Gateweave Cloud's `cloud` environment: apply migrations, then deploy |
 
 See [architecture](docs/architecture.md) for how checks and incidents work, and
 [self-hosting](docs/self-hosting.md) for running your own copy.
 
 To deploy your own, follow [self-hosting](docs/self-hosting.md): create the database, replace
 the placeholders in `wrangler.jsonc` with your services, route and sender, then `pnpm run deploy`,
-which applies the migrations and deploys.
+which applies the migrations and deploys. The top level of `wrangler.jsonc` is that template. Gateweave
+Cloud's own page (status.gateweave.com) is the environment `cloud` of the same file, deployed with
+`pnpm run deploy:cloud`; the account comes from `CLOUDFLARE_ACCOUNT_ID`, and the file names no account
+or zone.
 
 Filing incidents in Track is off until these are set, and nothing else changes without them:
 

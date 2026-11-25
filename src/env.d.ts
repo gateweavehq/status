@@ -16,6 +16,12 @@ interface StatusSettings {
 	 */
 	ANALYTICS_TOKEN?: string;
 	/**
+	 * The account's and the zone's ids for the error watch, when ERROR_WATCH leaves them out (secrets,
+	 * so that a public wrangler.jsonc names neither). `account` and `zone` in ERROR_WATCH win.
+	 */
+	ERROR_WATCH_ACCOUNT?: string;
+	ERROR_WATCH_ZONE?: string;
+	/**
 	 * Filing each incident as an issue in Track, with the comment when it ends. Without all four
 	 * of the first, nothing is filed. TRACK_KEY is an agent member's key, a secret.
 	 */

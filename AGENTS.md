@@ -41,11 +41,20 @@ the type check and the tests. Run it before calling a change done.
 
 ## Gateweave Cloud's deployment
 
-`wrangler.jsonc` here is the public template: placeholders only, no account, zone, database or
-route of ours. Gateweave Cloud's page (status.gateweave.com) is deployed from a private copy of
-this repository, `gateweave-status-deployment`. The copy is this repository's `main`, merged in by
-hand, and it keeps its own `wrangler.jsonc`: our account, route, D1 database id, sender, services,
-error watch, Track settings, and `PAGE_NAME`, `PAGE_DESCRIPTION`, `PAGE_URL` and `HOME_URL`. Nothing
-syncs it automatically. A change here that adds or renames a setting needs the same change in that
-copy's `wrangler.jsonc` before its next deploy. The deploy steps for status.gateweave.com live in
-the copy's own README. Never put those values in this repository.
+The top level of `wrangler.jsonc` is the public template that a self-hoster deploys: placeholders
+only. Gateweave Cloud's page (status.gateweave.com) is the named environment `cloud` of the same
+file, as in Track and Forms. It holds the Worker's name (`gateweave-status`), the Custom Domain, the
+D1 database's id (the id of a resource, which grants nothing), the cron trigger, the `EMAIL`
+binding and every variable: the services, the error watch's hosts and Workers, the Track settings,
+and `PAGE_NAME`, `PAGE_DESCRIPTION`, `PAGE_URL` and `HOME_URL`. Wrangler does not inherit these into
+an environment, so a change that adds or renames a setting, a binding or a trigger at the top level
+needs the same change in `env.cloud`. Nothing in the file names the Cloudflare account or a zone:
+the account is `CLOUDFLARE_ACCOUNT_ID` in the environment, and the error watch's two ids are the
+secrets `ERROR_WATCH_ACCOUNT` and `ERROR_WATCH_ZONE`. Never add an `account_id`, a zone id or a
+secret to this file.
+
+The next deploy of status.gateweave.com, and every one after it: with `CLOUDFLARE_ACCOUNT_ID` set to
+Gateweave's account and Wrangler logged in to it, `pnpm run deploy:cloud` (it applies the D1
+migrations with `--env cloud`, then `wrangler deploy --env cloud`). `pnpm run deploy` is the
+self-hoster's and must not be used for it. Set the two error watch secrets before the first deploy
+of the version that introduced them (docs/self-hosting.md).

@@ -457,6 +457,16 @@ describe("the error watch", () => {
 			minShare: 0.05,
 		});
 		const good = { account, zone: account, hosts: ["a.test"] };
+		// The ids may come from secrets instead, and the setting's own win.
+		const other = "1".repeat(32);
+		const bare = JSON.stringify({ hosts: ["a.test"] });
+		expect(errorWatchOf(bare, { account, zone: other })).toMatchObject({ account, zone: other });
+		expect(errorWatchOf(JSON.stringify(good), { account: other, zone: other })).toMatchObject({
+			account,
+			zone: account,
+		});
+		expect(() => errorWatchOf(bare)).toThrow("account is the account's id");
+		expect(() => errorWatchOf(bare, { account })).toThrow("zone is the zone's id");
 		const wrong: [unknown, string][] = [
 			["{", "ERROR_WATCH is an object, as JSON."],
 			[[], "ERROR_WATCH is an object."],

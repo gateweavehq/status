@@ -32,8 +32,15 @@ const ID = /^[0-9a-f]{32}$/;
 const HOST = /^[a-z0-9.-]{1,253}$/;
 const SCRIPT = /^[a-z0-9-]{1,63}$/;
 
-/** Reads `ERROR_WATCH`, or undefined when it isn't set. It may come as JSON text. */
-export function errorWatchOf(setting: unknown): ErrorWatch | undefined {
+/**
+ * Reads `ERROR_WATCH`, or undefined when it isn't set. It may come as JSON text. The account's and
+ * the zone's ids may be left out of it and come from `ids` instead (the secrets `ERROR_WATCH_ACCOUNT`
+ * and `ERROR_WATCH_ZONE`), so that a public `wrangler.jsonc` need not name either.
+ */
+export function errorWatchOf(
+	setting: unknown,
+	ids: { account?: string; zone?: string } = {},
+): ErrorWatch | undefined {
 	if (setting === undefined || setting === null || setting === "") return undefined;
 	let value = setting;
 	if (typeof setting === "string") {
@@ -47,8 +54,8 @@ export function errorWatchOf(setting: unknown): ErrorWatch | undefined {
 		throw new ConfigError("ERROR_WATCH is an object.");
 	}
 	const {
-		account,
-		zone,
+		account = ids.account,
+		zone = ids.zone,
 		hosts = [],
 		scripts = [],
 		minErrors = 10,
@@ -329,6 +336,8 @@ export async function findErrors(
 export interface WatchEnv {
 	DB: D1Database;
 	ERROR_WATCH?: unknown;
+	ERROR_WATCH_ACCOUNT?: string;
+	ERROR_WATCH_ZONE?: string;
 	ANALYTICS_TOKEN?: string;
 	PAGE_NAME?: string;
 }
@@ -351,7 +360,10 @@ export async function watchErrors(
 	alert: (subject: string, text: string) => Promise<void>,
 	send: typeof fetch = fetch,
 ): Promise<WatchReport> {
-	const watch = errorWatchOf(env.ERROR_WATCH);
+	const watch = errorWatchOf(env.ERROR_WATCH, {
+		account: env.ERROR_WATCH_ACCOUNT,
+		zone: env.ERROR_WATCH_ZONE,
+	});
 	if (!watch || !env.ANALYTICS_TOKEN || at % WINDOW_MS !== 0) {
 		return { ran: false, findings: [], alerted: [] };
 	}

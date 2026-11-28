@@ -907,6 +907,71 @@ describe("manual entries", () => {
 		expect(data.status).toBe("up");
 	});
 
+	it("shows an open manual incident when checks are missing or stale", async () => {
+		const now = Date.now();
+		const startedAt = now - 2 * MINUTE;
+		expect(
+			(await signed({ kind: "incident", service: "track", text: "Manual outage.", startedAt }))
+				.status,
+		).toBe(201);
+
+		const withoutCheck = await statusData(env, now);
+		expect(withoutCheck.services.find((service) => service.id === "track")).toMatchObject({
+			status: "down",
+			since: startedAt,
+			checkedAt: null,
+		});
+
+		const checkedAt = now - (now % MINUTE) - MINUTE;
+		await run(checkedAt);
+		const withStaleCheck = await statusData(env, now + 10 * MINUTE);
+		expect(withStaleCheck.services.find((service) => service.id === "track")).toMatchObject({
+			status: "down",
+			since: startedAt,
+			checkedAt,
+		});
+	});
+
+	it("keeps the earliest open incident even outside the recent timeline", async () => {
+		const now = Date.now();
+		const startedAt = now - 3 * MINUTE;
+		await run(now - MINUTE);
+		const insert = env.DB.prepare(
+			"INSERT INTO incident (service, started_at, kind) VALUES (?1, ?2, 'manual')",
+		);
+		await env.DB.batch([
+			insert.bind("track", startedAt),
+			insert.bind("track", startedAt + 1),
+			...Array.from({ length: 20 }, (_, index) => insert.bind("site", now - index)),
+		]);
+
+		const data = await statusData(env, now);
+		expect(data.incidents).toHaveLength(20);
+		expect(data.incidents.some((incident) => incident.service === "track")).toBe(false);
+		expect(data.services.find((service) => service.id === "track")).toMatchObject({
+			status: "down",
+			since: startedAt,
+		});
+	});
+
+	it("reports a conflict for an incident close that loses a race", async () => {
+		const now = Date.now();
+		const startedAt = now - MINUTE;
+		const posted = await signed({ kind: "incident", service: "track", text: "Outage.", startedAt });
+		expect(posted.status).toBe(201);
+		const { id } = await posted.json<{ id: number }>();
+
+		expect((await signed({ action: "end", id, endedAt: startedAt })).status).toBe(400);
+		const closed = await Promise.all([
+			signed({ action: "end", id, endedAt: now - 1 }),
+			signed({ action: "end", id, endedAt: now }),
+		]);
+		expect(closed.map((response) => response.status).sort()).toEqual([200, 409]);
+		const accepted = closed.find((response) => response.status === 200);
+		const result = await accepted?.json<{ endedAt: number }>();
+		expect(await rows("SELECT ended_at FROM incident")).toEqual([{ ended_at: result?.endedAt }]);
+	});
+
 	it("posts a maintenance window without changing the service's health", async () => {
 		const now = Date.now();
 		await run(now - MINUTE);

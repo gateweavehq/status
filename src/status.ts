@@ -67,13 +67,17 @@ export async function statusData(
 ): Promise<StatusData> {
 	const services = servicesOf(env.SERVICES);
 	const first = dayOf(now - (DAYS - 1) * DAY);
-	const [states, counts, incidents] = await env.DB.batch<unknown>([
+	const [states, counts, incidents, openIncidents] = await env.DB.batch<unknown>([
 		env.DB.prepare("SELECT * FROM service_state"),
 		env.DB.prepare("SELECT service, day, checks, failures FROM daily WHERE day >= ?1").bind(first),
 		env.DB.prepare(
 			`SELECT * FROM incident WHERE started_at >= ?1 OR ended_at IS NULL
 				ORDER BY (ended_at IS NULL) DESC, started_at DESC, id DESC LIMIT 20`,
 		).bind(now - INCIDENT_DAYS * DAY),
+		env.DB.prepare(
+			`SELECT service, kind, MIN(started_at) AS started_at FROM incident
+				WHERE ended_at IS NULL AND kind IN ('slow', 'manual') GROUP BY service, kind`,
+		),
 	]);
 	const stateOf = new Map(
 		((states?.results ?? []) as ServiceState[]).map((row) => [row.service, row]),
@@ -85,16 +89,16 @@ export async function statusData(
 		countsOf.set(row.service, days);
 	}
 	const rows = (incidents?.results ?? []) as Incident[];
-	const openSlow = new Map(
-		rows
-			.filter((incident) => incident.kind === "slow" && incident.ended_at === null)
-			.map((incident) => [incident.service, incident.started_at]),
-	);
-	const openManual = new Map(
-		rows
-			.filter((incident) => incident.kind === "manual" && incident.ended_at === null)
-			.map((incident) => [incident.service, incident.started_at]),
-	);
+	// Display limits must not hide an incident from the service's health.
+	const openSlow = new Map<string, number>();
+	const openManual = new Map<string, number>();
+	for (const incident of (openIncidents?.results ?? []) as Pick<
+		Incident,
+		"service" | "kind" | "started_at"
+	>[]) {
+		const open = incident.kind === "manual" ? openManual : openSlow;
+		open.set(incident.service, incident.started_at);
+	}
 	const viewOf = (service: Service): ServiceStatus => {
 		const state = stateOf.get(service.id);
 		const slowSince = openSlow.get(service.id);
@@ -110,13 +114,14 @@ export async function statusData(
 			checks += day?.checks ?? 0;
 			failures += day?.failures ?? 0;
 		}
-		const status: Health = stale
-			? "unknown"
-			: manualSince !== undefined
+		const status: Health =
+			manualSince !== undefined
 				? "down"
-				: state.status === "up" && slowSince !== undefined
-					? "slow"
-					: state.status;
+				: stale
+					? "unknown"
+					: state.status === "up" && slowSince !== undefined
+						? "slow"
+						: state.status;
 		return {
 			id: service.id,
 			name: service.name,

@@ -83,18 +83,21 @@ export async function postManual(request: Request, env: ManualEnv): Promise<Resp
 		const endedAt = input.endedAt === undefined ? now : timestamp(input.endedAt);
 		if (id <= 0 || endedAt === undefined)
 			return json("Give the incident id and a valid end time.", 400);
-		const open = await env.DB.prepare(
-			`SELECT started_at FROM incident
-				WHERE id = ?1 AND kind IN ('manual', 'maintenance') AND ended_at IS NULL`,
+		const ended = await env.DB.prepare(
+			`UPDATE incident SET ended_at = ?2 WHERE id = ?1 AND kind = 'manual'
+				AND ended_at IS NULL AND started_at < ?2 RETURNING ended_at`,
+		)
+			.bind(id, endedAt)
+			.first<{ ended_at: number }>();
+		if (ended) return json("Ended.", 200, { id, endedAt: ended.ended_at });
+		const entry = await env.DB.prepare(
+			"SELECT ended_at FROM incident WHERE id = ?1 AND kind = 'manual'",
 		)
 			.bind(id)
-			.first<{ started_at: number }>();
-		if (!open) return json("No open manual entry has that id.", 404);
-		if (endedAt <= open.started_at) return json("endedAt is after the entry's start.", 400);
-		await env.DB.prepare("UPDATE incident SET ended_at = ?2 WHERE id = ?1 AND ended_at IS NULL")
-			.bind(id, endedAt)
-			.run();
-		return json("Ended.", 200, { id, endedAt });
+			.first<{ ended_at: number | null }>();
+		if (!entry) return json("No manual incident has that id.", 404);
+		if (entry.ended_at !== null) return json("That manual incident has already ended.", 409);
+		return json("endedAt is after the entry's start.", 400);
 	}
 	if (input.action !== undefined && input.action !== "post") {
 		return json("action is post or end.", 400);

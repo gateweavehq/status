@@ -133,9 +133,11 @@ curl -X POST https://status.example.com/api/manual \
   --data '{"kind":"maintenance","service":"api","text":"Database upgrade.","startedAt":1780000000000,"endedAt":1780003600000}'
 ```
 
-The answer carries the entry's `id`. End an open entry with `{"action":"end","id":123}` (with the
-same headers). A manual incident makes its service down on the page and sends alert email; a
-maintenance window is only shown for its planned time. Neither is filed in Track.
+The answer carries the entry's `id`. End an open incident with `{"action":"end","id":123}` and the
+same headers. If the incident has already ended, the endpoint returns HTTP 409.
+
+A manual incident makes its service down on the page and sends alert email; a maintenance window
+is only shown for its planned time. Neither is filed in Track.
 
 ## Incidents in Track
 

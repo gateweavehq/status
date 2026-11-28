@@ -45,6 +45,10 @@ which runs this code.
   filing or comment that fails is tried again with a growing wait (a minute, up to half an hour),
   for three days, then given up and logged once. It needs the settings below. Incidents from before
   they were turned on are not filed.
+- **Manual entries** are posted to the signed `/api/manual` endpoint with the `MANUAL_KEY` secret:
+  a manual incident makes its service down until it is ended, and a maintenance window is shown for
+  its planned time without changing the health. Manual incidents alert as incidents do; maintenance
+  windows do not, and neither is filed in Track.
 - **The page** shows each service's state, the last 90 days, and the incidents of the last 30. It
   loads nothing else and reloads every minute. `/api/status` has the same data as JSON.
 - **What it keeps:** each check for a week, each day's counts and the incidents for good. No

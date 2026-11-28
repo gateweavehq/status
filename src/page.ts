@@ -80,14 +80,34 @@ function serviceCard(service: ServiceStatus, now: number): string {
 </article>`;
 }
 
+const KIND: Record<IncidentView["kind"], string> = {
+	down: "down",
+	slow: "slow",
+	manual: "manual incident",
+	maintenance: "maintenance",
+};
+
 function incidentItem(incident: IncidentView, now: number): string {
 	const started = `${when(incident.startedAt)}, ${clock(incident.startedAt)}`;
-	const what =
-		incident.endedAt === null
-			? `${incident.kind} since ${started} UTC (${duration(now - incident.startedAt)} so far)`
-			: `${incident.kind} for ${duration(incident.endedAt - incident.startedAt)} · ${started}–${clock(incident.endedAt)} UTC`;
+	const kind = KIND[incident.kind];
+	let what: string;
+	if (incident.kind === "maintenance" && incident.endedAt !== null) {
+		const ended = `${when(incident.endedAt)}, ${clock(incident.endedAt)}`;
+		if (now < incident.startedAt) what = `${kind} planned for ${started}–${ended} UTC`;
+		else if (now < incident.endedAt) what = `${kind} since ${started} UTC, until ${ended} UTC`;
+		else {
+			what = `${kind} for ${duration(incident.endedAt - incident.startedAt)} · ${started}–${clock(incident.endedAt)} UTC`;
+		}
+	} else {
+		what =
+			incident.endedAt === null
+				? `${kind} since ${started} UTC (${duration(now - incident.startedAt)} so far)`
+				: `${kind} for ${duration(incident.endedAt - incident.startedAt)} · ${started}–${clock(incident.endedAt)} UTC`;
+	}
 	const error = incident.error ? `<p class="error">${esc(incident.error)}</p>` : "";
-	return `<li class="${incident.endedAt === null ? "open" : "closed"}"><p><strong>${esc(incident.name)}</strong> ${esc(what)}</p>${error}</li>`;
+	const open =
+		incident.endedAt === null || (incident.kind === "maintenance" && now < incident.endedAt);
+	return `<li class="${open ? "open" : "closed"} ${incident.kind}"><p><strong>${esc(incident.name)}</strong> ${esc(what)}</p>${error}</li>`;
 }
 
 /** The status page. It loads nothing else, and reloads itself every minute. */
@@ -202,6 +222,7 @@ h1, h2 { margin: 0; }
 .incidents li:first-child { border-top: 0; padding-top: 0; }
 .incidents p { margin: 0; }
 .incidents .open strong { color: var(--major); }
+.incidents .open.maintenance strong { color: var(--minor); }
 .error { color: var(--muted-foreground); font-size: 13px; }
 .quiet { color: var(--muted-foreground); margin: 0; }
 footer { margin-top: 40px; color: var(--muted-foreground); font-size: 13px; }

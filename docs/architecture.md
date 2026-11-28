@@ -29,6 +29,10 @@ the first passing check closes it. Five passing but slow checks in a row, each t
 three seconds, open a separate slow incident from the first slow minute. Three quick checks close
 it. An outage ends a slow incident, and the outage's alert takes over.
 
+`src/manual.ts` is the signed `POST /api/manual` endpoint for entries a person writes: a manual
+incident, open until a second call ends it, or a maintenance window with a start and an end. A manual
+incident makes its service down on the page however the checks answer; maintenance never does.
+
 `src/alerts.ts` emails the start and recovery through the `EMAIL` binding when `ALERT_TO` is set.
 It records when each email went so one is sent once. Failed sends are retried on later minutes for
 up to three days. The page still shows incidents without email settings.
@@ -60,7 +64,8 @@ The append-only migrations in `migrations/` define:
 - `check_result`: each service's result for a minute, kept for seven days.
 - `daily`: each service's UTC daily check count, failure count and total duration, kept for good.
 - `service_state`: the last state, failure streak, times and last short error.
-- `incident`: outage and slow start and end times, alert times, and Track issue and retry progress.
+- `incident`: outage, slow, manual and maintenance start and end times, alert times, and Track issue
+  and retry progress. Only outages and slow incidents are filed in Track; maintenance is never emailed.
 - `error_alert`: error-watch findings and send times, kept for 90 days.
 
 No checked service's response body is stored.
@@ -73,7 +78,7 @@ incidents from the last 30 days plus open ones. A service with no check in five 
 image and reloads every minute.
 
 `src/index.ts` serves `GET` and `HEAD` for `/`, `/api/status` (the same data as JSON),
-`/api/fresh` and `/favicon.svg`. `/api/fresh` is for a monitor outside Cloudflare, which reads only
+`/api/fresh` and `/favicon.svg`, and the signed `POST /api/manual` above. `/api/fresh` is for a monitor outside Cloudflare, which reads only
 the status code: 200 while the newest check of any service is at most `STALE_MS` old, 503 after
 that or before any check, with one line of text saying which, and `Cache-Control: no-store`. The page and JSON use `Cache-Control: no-cache`, so they are checked again rather
 than served as stale status. The favicon is public and cached for one day. The page has a content

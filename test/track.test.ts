@@ -154,7 +154,7 @@ async function outage(track: ReturnType<typeof fakeTrack>, box?: ReturnType<type
 }
 
 async function addIncident(
-	kind: "down" | "slow",
+	kind: "down" | "slow" | "manual" | "maintenance",
 	startedAt: number,
 	endedAt: number | null = null,
 ) {
@@ -220,6 +220,15 @@ describe("filing an incident in Track", () => {
 				track_retry_at: null,
 			},
 		]);
+	});
+
+	it("does not file a manual incident or a maintenance window", async () => {
+		const track = fakeTrack();
+		await addIncident("manual", T0 - 20 * MINUTE);
+		await addIncident("maintenance", T0 - 20 * MINUTE, T0 - 10 * MINUTE);
+		const report = await run(T0, track);
+		expect(report.track).toMatchObject({ filed: 0, failed: 0 });
+		expect(track.issues).toEqual([]);
 	});
 
 	it("files an incident once, over later runs and over two runs at the same time", async () => {

@@ -30,6 +30,11 @@ interface StatusSettings {
 	TRACK_TEAM?: string;
 	TRACK_LABELS?: string;
 	TRACK_KEY?: string;
+	/**
+	 * Bearer secret for POST /api/manual, which writes manual incidents and maintenance windows.
+	 * Use at least 32 random characters; without it the endpoint is off.
+	 */
+	MANUAL_KEY?: string;
 }
 
 interface Env extends StatusSettings {}

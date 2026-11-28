@@ -274,7 +274,7 @@ export async function fileIncidents(
 		const brand = brandOf(env);
 		// What is owed: an issue for an incident worth one (an outage, or a slow spell that lasted
 		// long enough), a comment for one that ended. ?1 is now and ?2 the slow spell's length.
-		const owed = `(track_issue IS NULL AND (kind = 'down' OR COALESCE(ended_at, ?1) - started_at >= ?2)
+		const owed = `(track_issue IS NULL AND (kind = 'down' OR (kind = 'slow' AND COALESCE(ended_at, ?1) - started_at >= ?2))
 				OR (track_issue IS NOT NULL AND ended_at IS NOT NULL AND track_closed_noted_at IS NULL))`;
 		const old = await db
 			.prepare(

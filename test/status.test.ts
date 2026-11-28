@@ -972,6 +972,18 @@ describe("manual entries", () => {
 		expect(await rows("SELECT ended_at FROM incident")).toEqual([{ ended_at: result?.endedAt }]);
 	});
 
+	it("rejects a future end without closing a manual incident", async () => {
+		const now = Date.now();
+		const input = { kind: "incident", service: "track", text: "Outage.", startedAt: now - MINUTE };
+		const future = now + MINUTE;
+		expect((await signed({ ...input, endedAt: future })).status).toBe(400);
+		const posted = await signed(input);
+		expect(posted.status).toBe(201);
+		const { id } = await posted.json<{ id: number }>();
+		expect((await signed({ action: "end", id, endedAt: future })).status).toBe(400);
+		expect(await rows("SELECT ended_at FROM incident")).toEqual([{ ended_at: null }]);
+	});
+
 	it("posts a maintenance window without changing the service's health", async () => {
 		const now = Date.now();
 		await run(now - MINUTE);

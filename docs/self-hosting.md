@@ -134,7 +134,8 @@ curl -X POST https://status.example.com/api/manual \
 ```
 
 The answer carries the entry's `id`. End an open incident with `{"action":"end","id":123}` and the
-same headers. If the incident has already ended, the endpoint returns HTTP 409.
+same headers. A manual incident's end time must be at or before the current time. If the incident
+has already ended, the endpoint returns HTTP 409.
 
 A manual incident makes its service down on the page and sends alert email; a maintenance window
 is only shown for its planned time. Neither is filed in Track.

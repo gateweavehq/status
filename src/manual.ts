@@ -83,6 +83,7 @@ export async function postManual(request: Request, env: ManualEnv): Promise<Resp
 		const endedAt = input.endedAt === undefined ? now : timestamp(input.endedAt);
 		if (id <= 0 || endedAt === undefined)
 			return json("Give the incident id and a valid end time.", 400);
+		if (endedAt > now) return json("An incident does not end in the future.", 400);
 		const ended = await env.DB.prepare(
 			`UPDATE incident SET ended_at = ?2 WHERE id = ?1 AND kind = 'manual'
 				AND ended_at IS NULL AND started_at < ?2 RETURNING ended_at`,
@@ -123,6 +124,8 @@ export async function postManual(request: Request, env: ManualEnv): Promise<Resp
 		endedAt = parsedEnd;
 	}
 	if (endedAt !== null && endedAt <= startedAt) return json("endedAt is after startedAt.", 400);
+	if (kind === "manual" && endedAt !== null && endedAt > now)
+		return json("An incident does not end in the future.", 400);
 	if (kind === "maintenance" && endedAt === null) return json("Maintenance needs endedAt.", 400);
 	const result = await env.DB.prepare(
 		"INSERT INTO incident (service, started_at, ended_at, error, kind) VALUES (?1, ?2, ?3, ?4, ?5)",

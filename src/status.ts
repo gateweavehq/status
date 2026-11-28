@@ -36,7 +36,7 @@ export interface ServiceStatus {
 export interface IncidentView {
 	service: string;
 	name: string;
-	kind: "down" | "slow";
+	kind: Incident["kind"];
 	startedAt: number;
 	endedAt: number | null;
 	error: string | null;
@@ -72,7 +72,7 @@ export async function statusData(
 		env.DB.prepare("SELECT service, day, checks, failures FROM daily WHERE day >= ?1").bind(first),
 		env.DB.prepare(
 			`SELECT * FROM incident WHERE started_at >= ?1 OR ended_at IS NULL
-				ORDER BY started_at DESC, id DESC LIMIT 20`,
+				ORDER BY (ended_at IS NULL) DESC, started_at DESC, id DESC LIMIT 20`,
 		).bind(now - INCIDENT_DAYS * DAY),
 	]);
 	const stateOf = new Map(
@@ -84,14 +84,21 @@ export async function statusData(
 		days.set(row.day, { day: row.day, checks: row.checks, failures: row.failures });
 		countsOf.set(row.service, days);
 	}
+	const rows = (incidents?.results ?? []) as Incident[];
 	const openSlow = new Map(
-		((incidents?.results ?? []) as Incident[])
+		rows
 			.filter((incident) => incident.kind === "slow" && incident.ended_at === null)
+			.map((incident) => [incident.service, incident.started_at]),
+	);
+	const openManual = new Map(
+		rows
+			.filter((incident) => incident.kind === "manual" && incident.ended_at === null)
 			.map((incident) => [incident.service, incident.started_at]),
 	);
 	const viewOf = (service: Service): ServiceStatus => {
 		const state = stateOf.get(service.id);
 		const slowSince = openSlow.get(service.id);
+		const manualSince = openManual.get(service.id);
 		const stale = !state || now - state.checked_at > STALE_MS;
 		const days = Array.from({ length: DAYS }, (_, i) => {
 			const day = dayOf(now - (DAYS - 1 - i) * DAY);
@@ -105,14 +112,21 @@ export async function statusData(
 		}
 		const status: Health = stale
 			? "unknown"
-			: state.status === "up" && slowSince !== undefined
-				? "slow"
-				: state.status;
+			: manualSince !== undefined
+				? "down"
+				: state.status === "up" && slowSince !== undefined
+					? "slow"
+					: state.status;
 		return {
 			id: service.id,
 			name: service.name,
 			status,
-			since: status === "slow" ? (slowSince ?? null) : (state?.since ?? null),
+			since:
+				status === "slow"
+					? (slowSince ?? null)
+					: manualSince !== undefined
+						? manualSince
+						: (state?.since ?? null),
 			checkedAt: state?.checked_at ?? null,
 			ms: state?.last_ms ?? null,
 			uptime: checks === 0 ? null : (checks - failures) / checks,
@@ -131,7 +145,7 @@ export async function statusData(
 					? "slow"
 					: "up",
 		services: views,
-		incidents: ((incidents?.results ?? []) as Incident[])
+		incidents: rows
 			.filter((incident) => names.has(incident.service))
 			.map((incident) => ({
 				service: incident.service,

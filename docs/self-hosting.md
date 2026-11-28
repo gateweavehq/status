@@ -74,6 +74,7 @@ ignores. There is no example file.
 | `ANALYTICS_TOKEN`                         | Reads Cloudflare analytics for `ERROR_WATCH`: Account Analytics Read on its account, Analytics Read on its zone.                                             |
 | `ERROR_WATCH_ACCOUNT`, `ERROR_WATCH_ZONE` | The account's and the zone's ids for `ERROR_WATCH`, needed when it leaves `account` and `zone` out (then the scheduled run fails every minute without them). |
 | `TRACK_KEY`                               | An agent member's key (made in the workspace's settings, under Agents), for filing issues. Needs all four `TRACK_*` variables.                               |
+| `MANUAL_KEY`                              | At least 32 random characters. Turns on `POST /api/manual` for manual incidents and maintenance windows.                                                     |
 
 ## Watching your services
 
@@ -113,6 +114,28 @@ invalid, and the Worker reads it on every run, before it looks at the quarter ho
 run then fails **every minute**, not every 15 minutes, and the error watch does not run. The service
 checks, incidents and alerts of that minute still run, because the two parts run side by side and
 one failing does not stop the other.
+
+## Manual incidents and maintenance
+
+With the secret `MANUAL_KEY` set, `POST /api/manual` writes an entry no check can infer. Send it a
+JSON object with `Authorization: Bearer <key>`. Times are milliseconds since the Unix epoch. An
+incident is open until a second call ends it; a maintenance window needs both times:
+
+```sh
+curl -X POST https://status.example.com/api/manual \
+  -H "authorization: Bearer $MANUAL_KEY" \
+  -H "content-type: application/json" \
+  --data '{"kind":"incident","service":"api","text":"Customers cannot sign in."}'
+
+curl -X POST https://status.example.com/api/manual \
+  -H "authorization: Bearer $MANUAL_KEY" \
+  -H "content-type: application/json" \
+  --data '{"kind":"maintenance","service":"api","text":"Database upgrade.","startedAt":1780000000000,"endedAt":1780003600000}'
+```
+
+The answer carries the entry's `id`. End an open entry with `{"action":"end","id":123}` (with the
+same headers). A manual incident makes its service down on the page and sends alert email; a
+maintenance window is only shown for its planned time. Neither is filed in Track.
 
 ## Incidents in Track
 

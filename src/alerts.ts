@@ -18,7 +18,7 @@ export interface AlertEnv {
 export interface Incident {
 	id: number;
 	service: string;
-	kind: "down" | "slow";
+	kind: "down" | "slow" | "manual" | "maintenance";
 	started_at: number;
 	ended_at: number | null;
 	error: string | null;
@@ -84,6 +84,7 @@ export function messageFor(
 		`${product} checks every minute.`,
 	];
 	if (incident.kind === "slow") return slowMessage(incident, service, started, footer);
+	if (incident.kind === "manual") return manualMessage(incident, name, started, footer);
 	if (incident.ended_at === null) {
 		return {
 			subject: `${name} is down`,
@@ -112,6 +113,26 @@ export function messageFor(
 			`${name} works again since ${clock(incident.ended_at)} UTC, after ${lasted} down (from ${started}).`,
 			...footer,
 		].join("\n"),
+	};
+}
+
+function manualMessage(
+	incident: Incident,
+	name: string,
+	started: string,
+	footer: string[],
+): AlertMessage {
+	const note = incident.error ?? "A manual incident was posted.";
+	if (incident.ended_at === null) {
+		return {
+			subject: `${name} incident`,
+			text: [`${note}`, `Started: ${started}.`, ...footer].join("\n"),
+		};
+	}
+	const lasted = duration(incident.ended_at - incident.started_at);
+	return {
+		subject: `${name} incident ended`,
+		text: [`${note}`, `Started: ${started}; ended after ${lasted}.`, ...footer].join("\n"),
 	};
 }
 
@@ -165,7 +186,7 @@ export async function sendAlerts(
 	if (!mail || !env.EMAIL) return { sent: 0, failed: 0 };
 	const due = await env.DB.prepare(
 		`SELECT * FROM incident
-			WHERE COALESCE(ended_at, started_at) >= ?1
+			WHERE kind <> 'maintenance' AND COALESCE(ended_at, started_at) >= ?1
 			AND (alerted_at IS NULL OR (ended_at IS NOT NULL AND resolved_alerted_at IS NULL))
 			ORDER BY started_at, id`,
 	)

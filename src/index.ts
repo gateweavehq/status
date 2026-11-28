@@ -1,6 +1,7 @@
 import { sendMail } from "./alerts";
 import { brandOf } from "./brand";
 import { watchErrors } from "./errors";
+import { postManual } from "./manual";
 import { tick } from "./monitor";
 import { FAVICON, renderPage } from "./page";
 import { lastCheckAt, STALE_MS, statusData } from "./status";
@@ -16,6 +17,12 @@ const PAGE_HEADERS = {
 export default {
 	async fetch(request, env) {
 		const url = new URL(request.url);
+		if (url.pathname === "/api/manual") {
+			if (request.method !== "POST") {
+				return new Response("Only POST.", { status: 405, headers: { allow: "POST" } });
+			}
+			return postManual(request, env);
+		}
 		if (request.method !== "GET" && request.method !== "HEAD") {
 			return new Response("Only GET.", { status: 405, headers: { allow: "GET, HEAD" } });
 		}

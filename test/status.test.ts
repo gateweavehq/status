@@ -836,6 +836,120 @@ describe("the page", () => {
 	});
 });
 
+describe("manual entries", () => {
+	const KEY = "test-manual-key-with-at-least-32-chars";
+	const signed = (body: unknown, key = KEY) =>
+		worker.fetch(
+			new Request("https://status.test/api/manual", {
+				method: "POST",
+				headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+				body: JSON.stringify(body),
+			}),
+			{ ...env, MANUAL_KEY: KEY } as Env,
+		);
+
+	it("is off without a key, and refuses a wrong one", async () => {
+		const off = await worker.fetch(
+			new Request("https://status.test/api/manual", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: "{}",
+			}),
+			env,
+		);
+		expect(off.status).toBe(404);
+		expect((await signed({ action: "post" }, "wrong")).status).toBe(401);
+	});
+
+	it("posts a manual incident, shows it as down, ends it, and alerts once", async () => {
+		const box = mailbox();
+		const now = Date.now();
+		await run(now - MINUTE, box);
+		const posted = await signed({
+			kind: "incident",
+			service: "track",
+			text: "Customers can't sign in <yet>.",
+			startedAt: now - 30_000,
+		});
+		expect(posted.status).toBe(201);
+		const { id } = await posted.json<{ id: number }>();
+		expect(await rows("SELECT service, kind, started_at, ended_at, error FROM incident")).toEqual([
+			{
+				service: "track",
+				kind: "manual",
+				started_at: now - 30_000,
+				ended_at: null,
+				error: "Customers can't sign in <yet>.",
+			},
+		]);
+
+		let data = await statusData(env, now);
+		expect(data.status).toBe("down");
+		expect(data.services.find((service) => service.id === "track")).toMatchObject({
+			status: "down",
+			since: now - 30_000,
+		});
+		const html = await (await worker.fetch(new Request("https://status.test/"), env)).text();
+		expect(html).toContain("manual incident since");
+		expect(html).toContain("Customers can't sign in &lt;yet&gt;.");
+		expect(html).not.toContain("<yet>");
+
+		await run(now, box);
+		expect(box.sent.map((message) => message.subject)).toEqual(["Track incident"]);
+		expect((await signed({ action: "end", id: id + 1, endedAt: now })).status).toBe(404);
+		expect((await signed({ action: "end", id, endedAt: now })).status).toBe(200);
+		await run(now + MINUTE, box);
+		expect(box.sent.map((message) => message.subject)).toEqual([
+			"Track incident",
+			"Track incident ended",
+		]);
+		data = await statusData(env, now + MINUTE);
+		expect(data.status).toBe("up");
+	});
+
+	it("posts a maintenance window without changing the service's health", async () => {
+		const now = Date.now();
+		await run(now - MINUTE);
+		const posted = await signed({
+			kind: "maintenance",
+			service: "site",
+			text: "Database upgrade.",
+			startedAt: now + 2 * 60 * MINUTE,
+			endedAt: now + 3 * 60 * MINUTE,
+		});
+		expect(posted.status).toBe(201);
+		const data = await statusData(env, now);
+		expect(data.status).toBe("up");
+		expect(data.incidents[0]).toMatchObject({ kind: "maintenance", service: "site" });
+		const html = await (await worker.fetch(new Request("https://status.test/"), env)).text();
+		expect(html).toContain("maintenance planned for");
+	});
+
+	it("refuses entries it can't show as written", async () => {
+		const now = Date.now();
+		for (const [body, message] of [
+			[{ kind: "incident", service: "nope", text: "x" }, "service is not one of SERVICES"],
+			[{ kind: "incident", service: "site", text: "" }, "text is 1 to 500"],
+			[
+				{ kind: "incident", service: "site", text: "x", startedAt: now + 2 * MINUTE },
+				"An incident does not start in the future",
+			],
+			[
+				{ kind: "maintenance", service: "site", text: "x", startedAt: now },
+				"Maintenance needs endedAt",
+			],
+			[
+				{ kind: "maintenance", service: "site", text: "x", startedAt: now, endedAt: now },
+				"endedAt is after startedAt",
+			],
+		] as const) {
+			const response = await signed(body);
+			expect(response.status).toBe(400);
+			expect((await response.json<{ error: string }>()).error).toContain(message);
+		}
+	});
+});
+
 describe("words", () => {
 	it("give shares rounded down and durations in plain units", () => {
 		expect(percent(1)).toBe("100%");
